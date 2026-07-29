@@ -1,15 +1,124 @@
-import { useCallback, useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
-import { SHOP } from "../../src/constants/game";
-import { buyItem, db, equipItem, getCoins } from "../../src/database/db";
+import { DEFAULT_GEAR, GearKind, SHOP } from "../../src/constants/game";
+import { buyItem, equipItem, getCoins, getInventory, InventoryRow, unequipKind } from "../../src/database/db";
 import { colors } from "../../src/constants/theme";
-export default function ShopScreen(){
- const [coins,setCoins]=useState(0),[owned,setOwned]=useState<Record<string,number>>({});
- const load=useCallback(async()=>{setCoins(await getCoins());const r=await (await db()).getAllAsync<{item_id:string;equipped:number}>("SELECT item_id,equipped FROM inventory");setOwned(Object.fromEntries(r.map(x=>[x.item_id,x.equipped])));},[]);
- useFocusEffect(useCallback(()=>{load();},[load]));
- const act=async(id:string)=>{const item=SHOP.find(x=>x.id===id)!;if(owned[id]!==undefined){await equipItem(id,item.kind,SHOP.filter(x=>x.kind===item.kind).map(x=>x.id));await load();return;}const ok=await buyItem(id,item.cost);if(!ok)Alert.alert("交換できません","コインが不足しています。");await load();};
- return <Screen><Header title="Gear Exchange" sub={`所持コイン ${coins.toLocaleString()} 🪙`}/><Card><Text style={ui.h2}>装備中</Text><Text style={ui.body}>{SHOP.filter(x=>owned[x.id]===1).map(x=>`${x.emoji}${x.name}`).join("　")||"初期装備"}</Text></Card>{SHOP.map(x=><Card key={x.id}><View style={s.item}><Text style={s.emoji}>{x.emoji}</Text><View style={s.info}><Text style={ui.h2}>{x.name}</Text><Text style={ui.body}>{x.description}</Text><Text style={s.cost}>{x.cost} 🪙</Text></View></View><Button title={owned[x.id]===1?"装備中":owned[x.id]!==undefined?"装備する":"交換する"} onPress={()=>act(x.id)} disabled={owned[x.id]===1} kind={owned[x.id]!==undefined?"secondary":"primary"}/></Card>)}</Screen>
+
+const KIND_NAMES: Record<GearKind, string> = {
+  hat: "帽子", top: "服", bottom: "ズボン", shoes: "靴", rod: "竿", bait: "餌", cooler: "クーラー",
+};
+const KINDS = Object.keys(KIND_NAMES) as GearKind[];
+
+export default function ShopScreen() {
+  const [coins, setCoins] = useState(0);
+  const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [filter, setFilter] = useState<GearKind>("rod");
+
+  const load = useCallback(async () => {
+    const [wallet, items] = await Promise.all([getCoins(), getInventory()]);
+    setCoins(wallet);
+    setInventory(items);
+  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const owned = useMemo(() => new Map(inventory.map((row) => [row.item_id, row])), [inventory]);
+  const equipped = SHOP.filter((item) => owned.get(item.id)?.equipped === 1);
+
+  const act = async (id: string) => {
+    const item = SHOP.find((entry) => entry.id === id);
+    if (!item) return;
+    if (owned.has(id)) {
+      await equipItem(id, item.kind);
+      await load();
+      return;
+    }
+    const result = await buyItem(id, item.cost);
+    if (result === "insufficient") {
+      Alert.alert("コインが不足しています", `あと${Math.max(0, item.cost - coins).toLocaleString()}コイン必要です。`);
+      return;
+    }
+    if (result === "ok") {
+      await equipItem(id, item.kind);
+      Alert.alert("交換しました", `${item.name}を装備しました。`);
+    }
+    await load();
+  };
+
+  return (
+    <Screen>
+      <Header title="Gear Exchange" sub={`所持コイン ${coins.toLocaleString()} 🪙`} />
+      <Card>
+        <Text style={ui.h2}>現在の装備</Text>
+        <View style={styles.loadout}>
+          {KINDS.map((kind) => {
+            const item = equipped.find((entry) => entry.kind === kind);
+            return (
+              <Pressable key={kind} onPress={() => setFilter(kind)} style={[styles.slot, filter === kind && styles.activeSlot]}>
+                <Text style={styles.slotEmoji}>{item?.emoji ?? ({ hat:"◯", top:"👕", bottom:"👖", shoes:"👟", rod:"🎣", bait:"🪱", cooler:"🧊" })[kind]}</Text>
+                <Text style={styles.slotKind}>{KIND_NAMES[kind]}</Text>
+                <Text numberOfLines={1} style={styles.slotName}>{item?.name ?? DEFAULT_GEAR[kind]}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {equipped.some((item) => item.kind === filter) && (
+          <Button title={`${KIND_NAMES[filter]}を初期装備に戻す`} kind="secondary" onPress={async () => { await unequipKind(filter); await load(); }} />
+        )}
+      </Card>
+
+      <View style={styles.filters}>
+        {KINDS.map((kind) => (
+          <Pressable key={kind} onPress={() => setFilter(kind)} style={[styles.filter, filter === kind && styles.activeFilter]}>
+            <Text style={[styles.filterText, filter === kind && styles.activeFilterText]}>{KIND_NAMES[kind]}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {SHOP.filter((item) => item.kind === filter).map((item) => {
+        const row = owned.get(item.id);
+        return (
+          <Card key={item.id}>
+            <View style={styles.item}>
+              <Text style={styles.emoji}>{item.emoji}</Text>
+              <View style={styles.info}>
+                <View style={ui.between}>
+                  <Text style={ui.h2}>{item.name}</Text>
+                  {row && <Text style={styles.owned}>所持</Text>}
+                </View>
+                <Text style={ui.body}>{item.description}</Text>
+                <Text style={styles.cost}>{item.cost.toLocaleString()} 🪙</Text>
+              </View>
+            </View>
+            <Button
+              title={row?.equipped === 1 ? "装備中" : row ? "装備する" : "交換して装備"}
+              onPress={() => act(item.id)}
+              disabled={row?.equipped === 1}
+              kind={row ? "secondary" : "primary"}
+            />
+          </Card>
+        );
+      })}
+    </Screen>
+  );
 }
-const s=StyleSheet.create({item:{flexDirection:"row",gap:14,marginBottom:12},emoji:{fontSize:42},info:{flex:1},cost:{fontWeight:"900",color:colors.coral,marginTop:5}});
+
+const styles = StyleSheet.create({
+  loadout: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginVertical: 12 },
+  slot: { width: "31.5%", backgroundColor: colors.foam, borderRadius: 12, padding: 8, alignItems: "center", borderWidth: 1, borderColor: "transparent" },
+  activeSlot: { borderColor: colors.coral },
+  slotEmoji: { fontSize: 25 },
+  slotKind: { fontSize: 9, color: colors.muted },
+  slotName: { fontSize: 10, fontWeight: "800", color: colors.ink, maxWidth: "100%" },
+  filters: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  filter: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  activeFilter: { backgroundColor: colors.ocean, borderColor: colors.ocean },
+  filterText: { fontSize: 12, fontWeight: "800", color: colors.ink },
+  activeFilterText: { color: colors.white },
+  item: { flexDirection: "row", gap: 14, marginBottom: 12 },
+  emoji: { fontSize: 46 },
+  info: { flex: 1 },
+  cost: { fontWeight: "900", color: colors.coral, marginTop: 5 },
+  owned: { color: colors.ocean, backgroundColor: colors.foam, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3, fontSize: 11, fontWeight: "900" },
+});

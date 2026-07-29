@@ -1,4 +1,3 @@
-const base = require("./app.json");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -15,20 +14,20 @@ function readAjisaiGoogleMapsApiKey() {
   }
 }
 
-module.exports = () => {
+module.exports = ({ config }) => {
   const googleMapsApiKey =
     process.env.GOOGLE_MAPS_API_KEY || readAjisaiGoogleMapsApiKey();
 
   return {
-    ...base.expo,
+    ...config,
     android: {
-      ...base.expo.android,
+      ...config.android,
       config: googleMapsApiKey
         ? {
-            ...base.expo.android?.config,
+            ...config.android?.config,
             googleMaps: { apiKey: googleMapsApiKey },
           }
-        : base.expo.android?.config,
+        : config.android?.config,
     },
   };
 };
