@@ -21,11 +21,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - name: Generate Android project
-        env:
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-        run: |
-          test -n "$GOOGLE_MAPS_API_KEY"
-          npx expo prebuild --platform android --clean --non-interactive
+        run: npx expo prebuild --platform android --clean --non-interactive
       - name: Build release APK
         env:
           NODE_OPTIONS: --max-old-space-size=4096

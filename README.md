@@ -37,7 +37,7 @@ npx expo start -c
 
 ## Google Maps APIキー
 
-バックエンドは不要です。あじさい物流と全く同じGoogle Maps APIキーを使用します。このPCでのローカルビルドでは、`../ajisaiLogistics/frontend/ajisai_logistics/assets/js/map-config.js` の設定値を自動的に読み取ります。キーそのものはFishing WalkのGit履歴へ複製しません。
+バックエンドは不要です。あじさい物流と全く同じGoogle Maps APIキーを使用します。キーは `config/google-maps-key.txt` に直接保存し、ローカルとGitHub Actionsの両方で読み取ります。
 
 別のPCでは `.env.local` に同じキーを設定できます。
 
@@ -45,9 +45,7 @@ npx expo start -c
 GOOGLE_MAPS_API_KEY=あじさい物流と同じAPIキー
 ```
 
-GitHub ActionsではRepository secret `GOOGLE_MAPS_API_KEY` に、あじさい物流と同じ値を登録します。APIキーはリポジトリへコミットしません。
-
-Google Cloud側ではこのキーで `Maps SDK for Android` も有効にしてください。既存キーにWebサイト制限が設定されている場合、Android SDKから拒否される可能性があります。その場合だけキー制限の変更が必要です。
+GitHub Actionsの `GOOGLE_MAPS_API_KEY` Secretは不要です。Google Cloud側ではこのキーで `Maps SDK for Android` も有効にしてください。既存キーにWebサイト制限が設定されている場合、Android SDKから拒否される可能性があります。
 
 ## ブランチとAPK
 
