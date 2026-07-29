@@ -36,24 +36,17 @@ npx expo start -c
 
 ## Google Maps APIキー
 
-バックエンドは不要です。Google Cloudで `Maps SDK for Android` を有効にし、Androidアプリ用APIキーを環境変数 `GOOGLE_MAPS_API_KEY` に設定してからDevelopment BuildまたはRelease APKを作成します。
+バックエンドは不要です。あじさい物流と全く同じGoogle Maps APIキーを使用します。このPCでのローカルビルドでは、`../ajisaiLogistics/frontend/ajisai_logistics/assets/js/map-config.js` の設定値を自動的に読み取ります。キーそのものはFishing WalkのGit履歴へ複製しません。
 
-あじさい物流と同じGoogle Cloudプロジェクトを利用できます。ただし、あじさい物流はWeb用の `Maps JavaScript API` を使用しているため、Androidでは同じプロジェクト内にAndroid用キーを作成してください。
-
-APIキーには次の制限を設定します。
-
-- アプリケーション制限: Androidアプリ
-- パッケージ名: `jp.local.fishingwalk`
-- 証明書: 使用するAPK署名鍵のSHA-1
-- API制限: Maps SDK for Android
-
-ローカルでは `.env.local` に設定できます。
+別のPCでは `.env.local` に同じキーを設定できます。
 
 ```dotenv
-GOOGLE_MAPS_API_KEY=Android用のAPIキー
+GOOGLE_MAPS_API_KEY=あじさい物流と同じAPIキー
 ```
 
-GitHub ActionsではRepository secret `GOOGLE_MAPS_API_KEY` に同じ値を登録します。APIキーはリポジトリへコミットしません。
+GitHub ActionsではRepository secret `GOOGLE_MAPS_API_KEY` に、あじさい物流と同じ値を登録します。APIキーはリポジトリへコミットしません。
+
+Google Cloud側ではこのキーで `Maps SDK for Android` も有効にしてください。既存キーにWebサイト制限が設定されている場合、Android SDKから拒否される可能性があります。その場合だけキー制限の変更が必要です。
 
 ## ブランチとAPK
 
