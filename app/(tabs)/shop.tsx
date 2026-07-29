@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
+import { AnglerArt, GearArt } from "../../src/components/GameArt";
 import { DEFAULT_GEAR, GearKind, SHOP } from "../../src/constants/game";
 import { buyItem, equipItem, getCoins, getInventory, InventoryRow, unequipKind } from "../../src/database/db";
 import { colors } from "../../src/constants/theme";
@@ -25,6 +26,9 @@ export default function ShopScreen() {
 
   const owned = useMemo(() => new Map(inventory.map((row) => [row.item_id, row])), [inventory]);
   const equipped = SHOP.filter((item) => owned.get(item.id)?.equipped === 1);
+  const outfitStage = equipped.some((item) => item.id === "rod4") ? 3
+    : equipped.length >= 5 ? 2
+      : equipped.length >= 2 ? 1 : 0;
 
   const act = async (id: string) => {
     const item = SHOP.find((entry) => entry.id === id);
@@ -50,7 +54,13 @@ export default function ShopScreen() {
     <Screen>
       <Header title="Gear Exchange" sub={`所持コイン ${coins.toLocaleString()} 🪙`} />
       <Card>
-        <Text style={ui.h2}>現在の装備</Text>
+        <View style={styles.anglerRow}>
+          <AnglerArt stage={outfitStage} />
+          <View style={styles.anglerCopy}>
+            <Text style={ui.h2}>現在の装備</Text>
+            <Text style={ui.body}>装備を集めるとアングラーの姿もグレードアップします。</Text>
+          </View>
+        </View>
         <View style={styles.loadout}>
           {KINDS.map((kind) => {
             const item = equipped.find((entry) => entry.kind === kind);
@@ -81,7 +91,7 @@ export default function ShopScreen() {
         return (
           <Card key={item.id}>
             <View style={styles.item}>
-              <Text style={styles.emoji}>{item.emoji}</Text>
+              <GearArt itemId={item.id} size={76} />
               <View style={styles.info}>
                 <View style={ui.between}>
                   <Text style={ui.h2}>{item.name}</Text>
@@ -117,8 +127,9 @@ const styles = StyleSheet.create({
   filterText: { fontSize: 12, fontWeight: "800", color: colors.ink },
   activeFilterText: { color: colors.white },
   item: { flexDirection: "row", gap: 14, marginBottom: 12 },
-  emoji: { fontSize: 46 },
   info: { flex: 1 },
   cost: { fontWeight: "900", color: colors.coral, marginTop: 5 },
   owned: { color: colors.ocean, backgroundColor: colors.foam, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3, fontSize: 11, fontWeight: "900" },
+  anglerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  anglerCopy: { flex: 1, gap: 6 },
 });

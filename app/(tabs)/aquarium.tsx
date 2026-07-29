@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Card, Header, Screen, ui } from "../../src/components/ui";
+import { AquariumHero, FishArt } from "../../src/components/GameArt";
 import { FISH, RANKS } from "../../src/constants/game";
 import { CatchSummary, getCatchStats, getCatchSummaries } from "../../src/database/db";
 import { colors, rankColors } from "../../src/constants/theme";
@@ -27,6 +28,7 @@ export default function Aquarium() {
   return (
     <Screen>
       <Header title="My Aquarium" sub={`図鑑 ${rows.length} / ${FISH.length} 種`} />
+      <AquariumHero />
       <Card>
         <View style={styles.stats}>
           <View style={styles.stat}><Text style={ui.muted}>総釣果</Text><Text style={styles.statValue}>{stats.count}</Text></View>
@@ -73,7 +75,7 @@ export default function Aquarium() {
                 const caught = rows.find((row) => row.fish_id === fish.id);
                 return (
                   <View key={fish.id} style={[styles.fishCard, !caught && styles.locked]}>
-                    <Text style={styles.emoji}>{caught ? fish.emoji : "◌"}</Text>
+                    <FishArt fishId={fish.id} size={74} locked={!caught} />
                     <Text style={styles.fishName}>{caught ? fish.name : "未発見"}</Text>
                     <Text style={[styles.rank, { color: caught ? rankColors[fish.rank] : colors.muted }]}>{fish.rank} RANK</Text>
                     {caught
@@ -107,7 +109,6 @@ const styles = StyleSheet.create({
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
   fishCard: { width: "48%", backgroundColor: colors.foam, borderRadius: 14, padding: 12, alignItems: "center" },
   locked: { opacity: 0.48 },
-  emoji: { fontSize: 38 },
   fishName: { fontWeight: "900", color: colors.ink, marginTop: 4, textAlign: "center" },
   rank: { fontSize: 11, fontWeight: "900", marginTop: 2 },
   record: { fontSize: 12, fontWeight: "800", color: colors.coral, marginTop: 3 },

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
+import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
 import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, ShopItem } from "../../src/constants/game";
 import { colors, rankColors } from "../../src/constants/theme";
 import { getCoins, getEquippedItems, saveCatch } from "../../src/database/db";
@@ -169,6 +170,7 @@ export default function FishScreen() {
       </Card>
 
       <Card style={styles.hero}>
+        <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={155} />
         <Text style={styles.water}>
           {phase === "bite" ? "💥 〰️ 🎣 〰️ 💥" : phase === "waiting" ? "🌊  〰️  ◉  〰️  🌊" : "🌊  〜  🎣  〜  🌊"}
         </Text>
@@ -182,7 +184,7 @@ export default function FishScreen() {
         <Card>
           {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
           <View style={styles.catch}>
-            <Text style={styles.fish}>{last.emoji}</Text>
+            <FishArt fishId={last.id} size={92} />
             <View style={styles.catchInfo}>
               <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
               <Text style={styles.name}>{last.name}</Text>
@@ -220,7 +222,6 @@ const styles = StyleSheet.create({
   best: { textAlign: "center", color: colors.gold, fontWeight: "900", marginBottom: 8 },
   catch: { flexDirection: "row", gap: 18, alignItems: "center", marginBottom: 12 },
   catchInfo: { flex: 1 },
-  fish: { fontSize: 62 },
   rank: { fontWeight: "900", fontSize: 13 },
   name: { fontSize: 25, fontWeight: "900", color: colors.ink },
   ranks: { flexDirection: "row", gap: 5, marginVertical: 12, flexWrap: "wrap" },
