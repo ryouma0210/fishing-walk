@@ -1,0 +1,54 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [stg, production]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: npm ci --legacy-peer-deps
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx expo prebuild --platform android --clean --non-interactive
+      - name: Build release APK
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: ./gradlew assembleRelease --no-daemon --max-workers=2
+        working-directory: android
+      - name: Select artifact name
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_NAME" = "production" ]; then
+            echo "APK_NAME=fishing-walk-prd.apk" >> "$GITHUB_ENV"
+            echo "DRIVE_FOLDER_ID=1Q76gamYiWUKBuBqM0agKH-dy8cn78WeF" >> "$GITHUB_ENV"
+          else
+            echo "APK_NAME=fishing-walk-stg.apk" >> "$GITHUB_ENV"
+            echo "DRIVE_FOLDER_ID=1HS5PQJk9V1HJedd0b4IX86xiLu018ZLK" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_NAME }}
+          path: android/app/build/outputs/apk/release/app-release.apk
+      - name: Install rclone
+        run: curl -fsSL https://rclone.org/install.sh | sudo bash
+      - name: Configure Google Drive
+        env:
+          RCLONE_CONFIG_BASE64: ${{ secrets.GDRIVE_RCLONE_CONFIG_BASE64 }}
+        run: |
+          test -n "$RCLONE_CONFIG_BASE64"
+          mkdir -p "$HOME/.config/rclone"
+          echo "$RCLONE_CONFIG_BASE64" | base64 --decode > "$HOME/.config/rclone/rclone.conf"
+          chmod 600 "$HOME/.config/rclone/rclone.conf"
+      - name: Upload APK
+        run: rclone copyto android/app/build/outputs/apk/release/app-release.apk "gdrive:${APK_NAME}" --drive-root-folder-id "$DRIVE_FOLDER_ID"

@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Fishing Walk",
+    "slug": "fishing-walk",
+    "version": "0.1.0",
+    "icon": "./assets/icon.png",
+    "orientation": "portrait",
+    "scheme": "fishingwalk",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "現在地と近くの釣り場を地図に表示するため、位置情報を使用します。"
+        }
+      ],
+      "expo-font"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "jp.local.fishingwalk",
+      "infoPlist": {
+        "NSMotionUsageDescription": "歩数を日別・月別に集計するため、モーションとフィットネスデータを使用します。"
+      }
+    },
+    "android": {
+      "package": "jp.local.fishingwalk",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#063B4C"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACTIVITY_RECOGNITION"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "local-only"
+      }
+    }
+  }
+}
