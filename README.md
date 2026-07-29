@@ -34,6 +34,27 @@ npm run lint
 npx expo start -c
 ```
 
+## Google Maps APIキー
+
+バックエンドは不要です。Google Cloudで `Maps SDK for Android` を有効にし、Androidアプリ用APIキーを環境変数 `GOOGLE_MAPS_API_KEY` に設定してからDevelopment BuildまたはRelease APKを作成します。
+
+あじさい物流と同じGoogle Cloudプロジェクトを利用できます。ただし、あじさい物流はWeb用の `Maps JavaScript API` を使用しているため、Androidでは同じプロジェクト内にAndroid用キーを作成してください。
+
+APIキーには次の制限を設定します。
+
+- アプリケーション制限: Androidアプリ
+- パッケージ名: `jp.local.fishingwalk`
+- 証明書: 使用するAPK署名鍵のSHA-1
+- API制限: Maps SDK for Android
+
+ローカルでは `.env.local` に設定できます。
+
+```dotenv
+GOOGLE_MAPS_API_KEY=Android用のAPIキー
+```
+
+GitHub ActionsではRepository secret `GOOGLE_MAPS_API_KEY` に同じ値を登録します。APIキーはリポジトリへコミットしません。
+
 ## ブランチとAPK
 
 | ブランチ | 用途 | APK |
