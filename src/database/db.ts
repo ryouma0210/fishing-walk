@@ -313,7 +313,7 @@ export async function saveSteps(day: string, steps: number, source = "pedometer"
   await (await db()).runAsync(
     `INSERT INTO step_days(day,steps,source,updated_at) VALUES(?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
-       steps=MAX(step_days.steps,excluded.steps),
+       steps=excluded.steps,
        source=excluded.source,
        updated_at=excluded.updated_at`,
     day,

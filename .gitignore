@@ -5,6 +5,7 @@ ios/
 dist/
 dist-android/
 dist-android-check/
+dist-health-check/
 *.jks
 *.keystore
 *.apk

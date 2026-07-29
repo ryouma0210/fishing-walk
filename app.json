@@ -16,7 +16,24 @@
           "locationWhenInUsePermission": "現在地と近くの釣り場を地図に表示するため、位置情報を使用します。"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "react-native-health-connect",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "今日と月間の歩数を表示し、釣りゲームの歩数ポイントへ反映するために使用します。",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": false,
@@ -34,7 +51,7 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "ACTIVITY_RECOGNITION"
+        "android.permission.health.READ_STEPS"
       ]
     },
     "extra": {
