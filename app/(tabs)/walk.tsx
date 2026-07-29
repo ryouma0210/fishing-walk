@@ -4,7 +4,7 @@ import { Pedometer } from "expo-sensors";
 import { useFocusEffect } from "expo-router";
 import { Card, Header, Screen, ui } from "../../src/components/ui";
 import { colors } from "../../src/constants/theme";
-import { getStepsForMonth, saveSteps } from "../../src/database/db";
+import { getStepsForMonth, getWalkPoints, saveSteps } from "../../src/database/db";
 
 const dayKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -17,10 +17,12 @@ export default function WalkScreen() {
   const [days, setDays] = useState<{ day: string; steps: number }[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [status, setStatus] = useState("歩数データを確認中");
+  const [points, setPoints] = useState(0);
   const baseSteps = useRef(0);
 
   const loadMonth = useCallback(async () => {
     setDays(await getStepsForMonth(year, month));
+    setPoints(await getWalkPoints());
   }, [month, year]);
 
   const syncToday = useCallback(async () => {
@@ -91,6 +93,10 @@ export default function WalkScreen() {
         </View>
         <View style={styles.track}><View style={[styles.progress, { width: `${Math.min(100, today / 100)}%` }]} /></View>
         <Text style={ui.muted}>目標 10,000歩 ・ 達成率 {Math.min(100, Math.round(today / 100))}%</Text>
+        <View style={styles.pointBox}>
+          <Text style={styles.pointLabel}>交換に使える歩数ポイント</Text>
+          <Text style={styles.pointValue}>{points.toLocaleString()} pt</Text>
+        </View>
       </Card>
 
       <Card>
@@ -147,4 +153,7 @@ const styles = StyleSheet.create({
   milestone: { flex: 1, paddingVertical: 7, borderRadius: 9, backgroundColor: colors.line, alignItems: "center" },
   reached: { backgroundColor: colors.gold },
   milestoneText: { fontSize: 11, fontWeight: "800", color: colors.ink },
+  pointBox: { marginTop: 12, backgroundColor: colors.navy, borderRadius: 13, padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  pointLabel: { color: colors.white, fontSize: 12, fontWeight: "700" },
+  pointValue: { color: colors.gold, fontSize: 18, fontWeight: "900" },
 });

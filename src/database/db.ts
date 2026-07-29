@@ -57,6 +57,23 @@ export async function db() {
           source TEXT NOT NULL DEFAULT 'pedometer',
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS point_spends (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id TEXT NOT NULL UNIQUE,
+          points INTEGER NOT NULL CHECK(points >= 0),
+          spent_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS consumable_spends (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id TEXT NOT NULL,
+          points INTEGER NOT NULL CHECK(points >= 0),
+          spent_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS bait_inventory (
+          item_id TEXT PRIMARY KEY,
+          quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+          selected INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
@@ -86,9 +103,17 @@ async function ensureCatchColumns(database: SQLite.SQLiteDatabase) {
   }
 }
 
-export async function getCoins() {
-  const row = await (await db()).getFirstAsync<{ coins: number }>("SELECT coins FROM wallet WHERE id=1");
-  return row?.coins ?? 0;
+export async function getWalkPoints() {
+  const database = await db();
+  const earned = await database.getFirstAsync<{ points: number }>(
+    "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+  );
+  const spent = await database.getFirstAsync<{ points: number }>(
+    `SELECT
+      COALESCE((SELECT SUM(points) FROM point_spends),0)
+      + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+  );
+  return Math.max(0, (earned?.points ?? 0) - (spent?.points ?? 0));
 }
 
 export async function saveCatch(input: {
@@ -96,7 +121,6 @@ export async function saveCatch(input: {
   size: number;
   rank: string;
   aquarium: string;
-  coins: number;
   spotId: string;
   spotName: string;
   habitat: string;
@@ -112,12 +136,11 @@ export async function saveCatch(input: {
     await database.runAsync(
       `INSERT INTO catches(
         fish_id,size_cm,rank,aquarium,coins,caught_at,spot_id,spot_name,habitat,steps_at_catch,is_personal_best
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-      input.fishId, input.size, input.rank, input.aquarium, input.coins,
+      ) VALUES(?,?,?,?,0,?,?,?,?,?,?)`,
+      input.fishId, input.size, input.rank, input.aquarium,
       new Date().toISOString(), input.spotId, input.spotName, input.habitat,
       input.steps, isPersonalBest ? 1 : 0,
     );
-    await database.runAsync("UPDATE wallet SET coins=coins+? WHERE id=1", input.coins);
   });
   return isPersonalBest;
 }
@@ -149,17 +172,107 @@ export async function buyItem(itemId: string, cost: number) {
       result = "owned";
       return;
     }
-    const wallet = await database.getFirstAsync<{ coins: number }>("SELECT coins FROM wallet WHERE id=1");
-    if ((wallet?.coins ?? 0) < cost) return;
-    await database.runAsync("UPDATE wallet SET coins=coins-? WHERE id=1", cost);
+    const earned = await database.getFirstAsync<{ points: number }>(
+      "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+    );
+    const spent = await database.getFirstAsync<{ points: number }>(
+      `SELECT
+        COALESCE((SELECT SUM(points) FROM point_spends),0)
+        + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+    );
+    if ((earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
     await database.runAsync(
       "INSERT INTO inventory(item_id,equipped,purchased_at) VALUES(?,0,?)",
       itemId,
       new Date().toISOString(),
     );
+    await database.runAsync(
+      "INSERT INTO point_spends(item_id,points,spent_at) VALUES(?,?,?)",
+      itemId,
+      cost,
+      new Date().toISOString(),
+    );
     result = "ok";
   });
   return result;
+}
+
+export async function buyBait(itemId: string, cost: number) {
+  const database = await db();
+  let ok = false;
+  await database.withTransactionAsync(async () => {
+    const earned = await database.getFirstAsync<{ points: number }>(
+      "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+    );
+    const spent = await database.getFirstAsync<{ points: number }>(
+      `SELECT
+        COALESCE((SELECT SUM(points) FROM point_spends),0)
+        + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+    );
+    if ((earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
+    await database.runAsync(
+      "INSERT INTO consumable_spends(item_id,points,spent_at) VALUES(?,?,?)",
+      itemId, cost, new Date().toISOString(),
+    );
+    await database.runAsync(
+      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,1,0)
+       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+1`,
+      itemId,
+    );
+    const selected = await database.getFirstAsync("SELECT 1 FROM bait_inventory WHERE selected=1 AND quantity>0");
+    if (!selected) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", itemId);
+    ok = true;
+  });
+  return ok;
+}
+
+export async function getBaitInventory() {
+  return (await db()).getAllAsync<{ item_id: string; quantity: number; selected: number }>(
+    "SELECT item_id,quantity,selected FROM bait_inventory",
+  );
+}
+
+export async function selectBait(itemId: string) {
+  const database = await db();
+  await database.withTransactionAsync(async () => {
+    await database.runAsync("UPDATE bait_inventory SET selected=0");
+    await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=? AND quantity>0", itemId);
+  });
+}
+
+export async function getSelectedBait() {
+  return (await db()).getFirstAsync<{ item_id: string; quantity: number }>(
+    "SELECT item_id,quantity FROM bait_inventory WHERE selected=1 AND quantity>0",
+  );
+}
+
+export async function consumeSelectedBait() {
+  const database = await db();
+  let itemId: string | null = null;
+  await database.withTransactionAsync(async () => {
+    const selected = await database.getFirstAsync<{ item_id: string; quantity: number }>(
+      "SELECT item_id,quantity FROM bait_inventory WHERE selected=1 AND quantity>0",
+    );
+    if (!selected) return;
+    itemId = selected.item_id;
+    await database.runAsync("UPDATE bait_inventory SET quantity=quantity-1 WHERE item_id=?", selected.item_id);
+    if (selected.quantity <= 1) {
+      await database.runAsync("UPDATE bait_inventory SET selected=0 WHERE item_id=?", selected.item_id);
+      const next = await database.getFirstAsync<{ item_id: string }>(
+        "SELECT item_id FROM bait_inventory WHERE quantity>0 ORDER BY item_id LIMIT 1",
+      );
+      if (next) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", next.item_id);
+    }
+  });
+  return itemId;
+}
+
+export async function getTodayCatchCount(dayPrefix: string) {
+  const row = await (await db()).getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) count FROM catches WHERE caught_at LIKE ?",
+    `${dayPrefix}%`,
+  );
+  return row?.count ?? 0;
 }
 
 export async function equipItem(itemId: string, kind: GearKind) {

@@ -7,10 +7,12 @@ const fishSheets: Record<Habitat, number> = {
   lake: require("../../assets/game/fish-lake-sheet.png"),
   sea: require("../../assets/game/fish-sea-sheet.png"),
 };
-const gearSheet = require("../../assets/game/gear-sheet.png");
+const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
+const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
 const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
 const aquariumBackground = require("../../assets/game/aquarium-background.png");
 const anglerOutfits = require("../../assets/game/angler-outfits.png");
+const mapAvatars = require("../../assets/game/map-avatars.png");
 
 const fishIndexes = Object.fromEntries(FISH.map((fish, index) => [fish.id, index]));
 const gearIndexes = Object.fromEntries(SHOP.map((item, index) => [item.id, index]));
@@ -60,9 +62,15 @@ export function FishArt({ fishId, size = 72, locked = false }: {
 }
 
 export function GearArt({ itemId, size = 64 }: { itemId: string; size?: number }) {
+  const globalIndex = gearIndexes[itemId] ?? 0;
   return (
     <View style={styles.rounded}>
-      <GridSprite source={gearSheet} index={gearIndexes[itemId] ?? 0} columns={4} size={size} />
+      <GridSprite
+        source={globalIndex < 16 ? apparelGearSheet : tackleGearSheet}
+        index={globalIndex % 16}
+        columns={4}
+        size={size}
+      />
     </View>
   );
 }
@@ -113,6 +121,25 @@ export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?
           height,
           width: height * 0.72 * 4,
           left: -safeStage * height * 0.72,
+        }}
+      />
+    </View>
+  );
+}
+
+export function MapAvatar({ stage = 0, height = 94 }: { stage?: number; height?: number }) {
+  const safeStage = Math.max(0, Math.min(3, stage));
+  const width = height * 0.5;
+  return (
+    <View style={{ width, height, overflow: "hidden" }}>
+      <Image
+        source={mapAvatars}
+        resizeMode="stretch"
+        style={{
+          position: "absolute",
+          height,
+          width: width * 4,
+          left: -safeStage * width,
         }}
       />
     </View>

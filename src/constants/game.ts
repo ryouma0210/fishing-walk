@@ -1,7 +1,7 @@
 export type Rank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS";
 export type Habitat = "pond" | "river" | "lake" | "sea";
-export type GearKind = "hat" | "top" | "bottom" | "shoes" | "rod" | "bait" | "cooler";
-export type GearEffect = "luck" | "fight" | "coins" | "steps" | "rod" | "bait" | "size";
+export type GearKind = "hat" | "top" | "bottom" | "shoes" | "rod" | "reel" | "bait" | "cooler";
+export type GearEffect = "outfit" | "rod" | "reel" | "bait" | "capacity";
 
 export type Fish = {
   id: string;
@@ -24,6 +24,9 @@ export type ShopItem = {
   effect: GearEffect;
   power: number;
   description: string;
+  targetRanks?: Rank[];
+  dailyCapacity?: number;
+  consumable?: boolean;
 };
 
 export type FishingSpot = {
@@ -144,27 +147,43 @@ export const FISH: Fish[] = [
 ];
 
 export const SHOP: ShopItem[] = [
-  {id:"cap",name:"潮風キャップ",emoji:"🧢",kind:"hat",cost:80,effect:"luck",power:1,description:"レア抽選 +1"},
-  {id:"anglerHat",name:"アングラーハット",emoji:"👒",kind:"hat",cost:450,effect:"luck",power:3,description:"レア抽選 +3"},
-  {id:"legendCrown",name:"海王の帽子",emoji:"👑",kind:"hat",cost:1800,effect:"luck",power:6,description:"レア抽選 +6"},
-  {id:"jacket",name:"防水ジャケット",emoji:"🧥",kind:"top",cost:120,effect:"fight",power:1,description:"ファイト成功率 +4%"},
-  {id:"stormJacket",name:"ストームジャケット",emoji:"🥋",kind:"top",cost:650,effect:"fight",power:4,description:"ファイト成功率 +16%"},
-  {id:"pants",name:"アングラーパンツ",emoji:"👖",kind:"bottom",cost:100,effect:"coins",power:1,description:"獲得コイン +10%"},
-  {id:"treasurePants",name:"財宝パンツ",emoji:"🩳",kind:"bottom",cost:700,effect:"coins",power:4,description:"獲得コイン +40%"},
-  {id:"boots",name:"磯ブーツ",emoji:"🥾",kind:"shoes",cost:90,effect:"steps",power:1,description:"歩数効果 +10%"},
-  {id:"trailShoes",name:"トレイルシューズ",emoji:"👟",kind:"shoes",cost:500,effect:"steps",power:3,description:"歩数効果 +30%"},
-  {id:"rod2",name:"カーボンロッド",emoji:"🎣",kind:"rod",cost:250,effect:"rod",power:2,description:"Aランクまで安定"},
-  {id:"rod3",name:"チタンロッド",emoji:"🎣",kind:"rod",cost:900,effect:"rod",power:4,description:"SSランクへ挑戦"},
-  {id:"rod4",name:"マスターロッド",emoji:"⚡",kind:"rod",cost:2600,effect:"rod",power:7,description:"SSSランクへ挑戦"},
-  {id:"bait2",name:"プレミアム餌",emoji:"🪱",kind:"bait",cost:150,effect:"bait",power:2,description:"高ランク出現率アップ"},
-  {id:"bait3",name:"幻光ルアー",emoji:"💎",kind:"bait",cost:750,effect:"bait",power:5,description:"幻魚を強く引き寄せる"},
-  {id:"cooler2",name:"大型クーラー",emoji:"🧊",kind:"cooler",cost:300,effect:"size",power:2,description:"大物サイズ率アップ"},
-  {id:"cooler3",name:"極寒クーラー",emoji:"❄️",kind:"cooler",cost:1200,effect:"size",power:5,description:"自己ベスト率大幅アップ"},
+  {id:"hat1",name:"潮風キャップ",emoji:"🧢",kind:"hat",cost:40,effect:"outfit",power:1,description:"魚速度-3%・サイズ+2%"},
+  {id:"hat2",name:"アングラーハット",emoji:"👒",kind:"hat",cost:160,effect:"outfit",power:2,description:"魚速度-6%・サイズ+4%"},
+  {id:"hat3",name:"ストームフード",emoji:"🧢",kind:"hat",cost:480,effect:"outfit",power:3,description:"魚速度-9%・サイズ+6%"},
+  {id:"hat4",name:"海王の冠",emoji:"👑",kind:"hat",cost:1400,effect:"outfit",power:4,description:"魚速度-12%・サイズ+8%"},
+  {id:"top1",name:"ライトシャツ",emoji:"👕",kind:"top",cost:50,effect:"outfit",power:1,description:"魚速度-3%・サイズ+2%"},
+  {id:"top2",name:"防水ジャケット",emoji:"🧥",kind:"top",cost:190,effect:"outfit",power:2,description:"魚速度-6%・サイズ+4%"},
+  {id:"top3",name:"ストームジャケット",emoji:"🥋",kind:"top",cost:550,effect:"outfit",power:3,description:"魚速度-9%・サイズ+6%"},
+  {id:"top4",name:"海王コート",emoji:"🧥",kind:"top",cost:1600,effect:"outfit",power:4,description:"魚速度-12%・サイズ+8%"},
+  {id:"bottom1",name:"フィッシングショーツ",emoji:"🩳",kind:"bottom",cost:45,effect:"outfit",power:1,description:"魚速度-3%・サイズ+2%"},
+  {id:"bottom2",name:"カーゴパンツ",emoji:"👖",kind:"bottom",cost:180,effect:"outfit",power:2,description:"魚速度-6%・サイズ+4%"},
+  {id:"bottom3",name:"テクニカルパンツ",emoji:"👖",kind:"bottom",cost:520,effect:"outfit",power:3,description:"魚速度-9%・サイズ+6%"},
+  {id:"bottom4",name:"財宝パンツ",emoji:"🩳",kind:"bottom",cost:1500,effect:"outfit",power:4,description:"魚速度-12%・サイズ+8%"},
+  {id:"shoes1",name:"デッキシューズ",emoji:"👟",kind:"shoes",cost:45,effect:"outfit",power:1,description:"魚速度-3%・サイズ+2%"},
+  {id:"shoes2",name:"磯ブーツ",emoji:"🥾",kind:"shoes",cost:170,effect:"outfit",power:2,description:"魚速度-6%・サイズ+4%"},
+  {id:"shoes3",name:"トレイルシューズ",emoji:"👟",kind:"shoes",cost:500,effect:"outfit",power:3,description:"魚速度-9%・サイズ+6%"},
+  {id:"shoes4",name:"潮渡りの靴",emoji:"🥾",kind:"shoes",cost:1450,effect:"outfit",power:4,description:"魚速度-12%・サイズ+8%"},
+  {id:"rod1",name:"グラスロッド",emoji:"🎣",kind:"rod",cost:60,effect:"rod",power:1,description:"必要維持時間-5%"},
+  {id:"rod2",name:"カーボンロッド",emoji:"🎣",kind:"rod",cost:240,effect:"rod",power:2,description:"必要維持時間-10%"},
+  {id:"rod3",name:"チタンロッド",emoji:"🎣",kind:"rod",cost:800,effect:"rod",power:3,description:"必要維持時間-15%"},
+  {id:"rod4",name:"マスターロッド",emoji:"⚡",kind:"rod",cost:2400,effect:"rod",power:4,description:"必要維持時間-20%"},
+  {id:"reel1",name:"スピンリール",emoji:"⚙️",kind:"reel",cost:55,effect:"reel",power:1,description:"対象ゲージ+3%"},
+  {id:"reel2",name:"精密リール",emoji:"⚙️",kind:"reel",cost:230,effect:"reel",power:2,description:"対象ゲージ+6%"},
+  {id:"reel3",name:"パワーリール",emoji:"⚙️",kind:"reel",cost:760,effect:"reel",power:3,description:"対象ゲージ+9%"},
+  {id:"reel4",name:"海王リール",emoji:"💠",kind:"reel",cost:2200,effect:"reel",power:4,description:"対象ゲージ+12%"},
+  {id:"bait1",name:"ミミズ餌",emoji:"🪱",kind:"bait",cost:1,effect:"bait",power:1,description:"E・Dランク狙い／1投分",targetRanks:["E","D"],consumable:true},
+  {id:"bait2",name:"練り餌",emoji:"🍡",kind:"bait",cost:3,effect:"bait",power:2,description:"C・Bランク狙い／1投分",targetRanks:["C","B"],consumable:true},
+  {id:"bait3",name:"活き餌",emoji:"🪣",kind:"bait",cost:8,effect:"bait",power:3,description:"A・Sランク狙い／1投分",targetRanks:["A","S"],consumable:true},
+  {id:"bait4",name:"幻光ルアー",emoji:"💎",kind:"bait",cost:25,effect:"bait",power:4,description:"SS・SSSランク狙い／1投分",targetRanks:["SS","SSS"],consumable:true},
+  {id:"cooler1",name:"コンパクトクーラー",emoji:"🧊",kind:"cooler",cost:80,effect:"capacity",power:1,description:"一日50匹まで",dailyCapacity:50},
+  {id:"cooler2",name:"ミドルクーラー",emoji:"🧊",kind:"cooler",cost:280,effect:"capacity",power:2,description:"一日100匹まで",dailyCapacity:100},
+  {id:"cooler3",name:"大型キャリークーラー",emoji:"🧊",kind:"cooler",cost:1000,effect:"capacity",power:3,description:"一日500匹まで",dailyCapacity:500},
+  {id:"cooler4",name:"極寒クーラー",emoji:"❄️",kind:"cooler",cost:3000,effect:"capacity",power:4,description:"一日1,000匹まで",dailyCapacity:1000},
 ];
 
 export const DEFAULT_GEAR: Record<GearKind, string> = {
   hat: "なし", top: "普段着", bottom: "普段のズボン", shoes: "スニーカー",
-  rod: "ビギナーロッド", bait: "ふつうの餌", cooler: "小型クーラー",
+  rod: "ビギナーロッド", reel: "標準リール", bait: "餌なし", cooler: "簡易バケツ（10匹）",
 };
 
 export function createFishingSpots(latitude: number, longitude: number): FishingSpot[] {
