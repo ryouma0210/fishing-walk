@@ -1,57 +1,68 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
-import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, ShopItem } from "../../src/constants/game";
+import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
 import { colors, rankColors } from "../../src/constants/theme";
-import { getCoins, getEquippedItems, saveCatch } from "../../src/database/db";
+import {
+  consumeSelectedBait, getEquippedItems, getSelectedBait, getTodayCatchCount, saveCatch,
+} from "../../src/database/db";
 import { getSelectedSpot } from "../../src/services/locationService";
 import { syncTodaySteps } from "../../src/services/stepService";
 
-type Phase = "idle" | "waiting" | "bite" | "result" | "escaped";
+type Phase = "idle" | "casting" | "approach" | "bite" | "battle" | "result" | "escaped";
 type CatchResult = {
   id: string;
   name: string;
-  emoji: string;
   rank: Rank;
   size: number;
-  reward: number;
   isPersonalBest: boolean;
   aquarium: string;
+};
+type BattleConfig = { zone: number; seconds: number; pull: number };
+
+const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
+  E: { zone: 58, seconds: 2, pull: 0.35 },
+  D: { zone: 50, seconds: 2.5, pull: 0.45 },
+  C: { zone: 43, seconds: 3.2, pull: 0.58 },
+  B: { zone: 36, seconds: 4, pull: 0.72 },
+  A: { zone: 29, seconds: 5, pull: 0.88 },
+  S: { zone: 23, seconds: 6.5, pull: 1.05 },
+  SS: { zone: 17, seconds: 8, pull: 1.25 },
+  SSS: { zone: 12, seconds: 10, pull: 1.5 },
 };
 
 function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
   return items.filter((item) => item.effect === effect).reduce((sum, item) => sum + item.power, 0);
 }
 
-function weightedRank(steps: number, gear: ShopItem[]) {
-  const stepPower = Math.min(8, Math.floor(steps / 1000) * (1 + effectPower(gear, "steps") * 0.1));
-  const luck = effectPower(gear, "luck") + effectPower(gear, "bait") + stepPower;
-  const rod = effectPower(gear, "rod");
-  const weights = [46, 27, 15, 7, 3.5, 1.2, 0.27, 0.03].map((weight, index) =>
-    weight * (1 + luck * index * 0.065),
-  );
-  const maxRank = Math.min(7, rod === 0 ? 4 : rod <= 2 ? 5 : rod <= 4 ? 6 : 7);
-  const allowed = weights.slice(0, maxRank + 1);
-  let roll = Math.random() * allowed.reduce((sum, value) => sum + value, 0);
-  for (let index = 0; index < allowed.length; index += 1) {
-    roll -= allowed[index];
-    if (roll <= 0) return RANKS[index];
-  }
-  return RANKS[0];
+function baitRank(steps: number, bait: ShopItem) {
+  const ranks = bait.targetRanks ?? ["E"];
+  if (ranks.length === 1) return ranks[0];
+  const highChance = Math.min(0.82, 0.25 + steps / 20000);
+  return Math.random() < highChance ? ranks[ranks.length - 1] : ranks[0];
 }
 
 export default function FishScreen() {
-  const [coins, setCoins] = useState(0);
   const [steps, setSteps] = useState(0);
   const [spot, setSpot] = useState<FishingSpot | null>(null);
   const [gear, setGear] = useState<ShopItem[]>([]);
+  const [bait, setBait] = useState<ShopItem | null>(null);
+  const [todayCatch, setTodayCatch] = useState(0);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [hookWindow, setHookWindow] = useState(0);
   const [candidate, setCandidate] = useState<(typeof FISH)[number] | null>(null);
   const [last, setLast] = useState<CatchResult | null>(null);
+  const [shadowScale, setShadowScale] = useState(0);
+  const [cursor, setCursor] = useState(50);
+  const [targetCenter, setTargetCenter] = useState(50);
+  const [battleProgress, setBattleProgress] = useState(0);
+  const holdingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorRef = useRef(50);
+  const progressRef = useRef(0);
+  const targetRef = useRef(50);
+  const finishingRef = useRef(false);
 
   const clearTimer = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -59,16 +70,18 @@ export default function FishScreen() {
   };
 
   const load = useCallback(async () => {
-    const [wallet, equipped, selectedSpot, todaySteps] = await Promise.all([
-      getCoins(),
+    const [equipped, selectedSpot, todaySteps, selectedBait, catches] = await Promise.all([
       getEquippedItems(),
       getSelectedSpot(),
       syncTodaySteps(),
+      getSelectedBait(),
+      getTodayCatchCount(new Date().toISOString().slice(0, 10)),
     ]);
-    setCoins(wallet);
     setGear(equipped);
     setSpot(selectedSpot);
     setSteps(todaySteps.steps);
+    setBait(SHOP.find((item) => item.id === selectedBait?.item_id) ?? null);
+    setTodayCatch(catches);
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -77,9 +90,9 @@ export default function FishScreen() {
   }, [load]));
   useEffect(() => clearTimer, []);
 
-  const chooseFish = () => {
+  const chooseFish = (usedBait: ShopItem) => {
     const habitat = spot?.habitat ?? "pond";
-    let rank = weightedRank(steps, gear);
+    let rank = baitRank(steps, usedBait);
     let pool = FISH.filter((fish) => fish.habitats.includes(habitat) && fish.rank === rank);
     while (!pool.length && RANK_INDEX[rank] > 0) {
       rank = RANKS[RANK_INDEX[rank] - 1];
@@ -88,143 +101,215 @@ export default function FishScreen() {
     return pool[Math.floor(Math.random() * pool.length)] ?? FISH[0];
   };
 
-  const cast = () => {
+  const cast = async () => {
+    if (!bait || todayCatch >= dailyCapacity) return;
+    const consumed = await consumeSelectedBait();
+    if (!consumed) {
+      setBait(null);
+      return;
+    }
+    const usedBait = SHOP.find((item) => item.id === consumed) ?? bait;
     clearTimer();
     setLast(null);
     setCandidate(null);
-    setPhase("waiting");
+    setShadowScale(0);
+    setPhase("casting");
     timeoutRef.current = setTimeout(() => {
-      const fish = chooseFish();
+      setPhase("approach");
+      const fish = chooseFish(usedBait);
       setCandidate(fish);
-      setHookWindow(3);
-      setPhase("bite");
-      timeoutRef.current = setTimeout(() => {
-        setHookWindow(0);
-        setPhase("escaped");
-      }, 3200);
-    }, 900 + Math.floor(Math.random() * 1700));
+      let step = 0;
+      const approach = setInterval(() => {
+        step += 1;
+        setShadowScale(step / 10);
+        if (step >= 10) {
+          clearInterval(approach);
+          setPhase("bite");
+          timeoutRef.current = setTimeout(() => setPhase("escaped"), 2300);
+        }
+      }, 130);
+    }, 700);
   };
 
-  useEffect(() => {
-    if (phase !== "bite") return;
-    const interval = setInterval(() => setHookWindow((value) => Math.max(0, value - 1)), 1000);
-    return () => clearInterval(interval);
-  }, [phase]);
-
-  const hook = async () => {
-    if (phase !== "bite" || !candidate || !spot) return;
+  const startBattle = () => {
+    if (!candidate || phase !== "bite") return;
     clearTimer();
+    cursorRef.current = 50;
+    targetRef.current = 50;
+    progressRef.current = 0;
+    finishingRef.current = false;
+    setCursor(50);
+    setTargetCenter(50);
+    setBattleProgress(0);
+    setPhase("battle");
+  };
+
+  const finishCatch = useCallback(async () => {
+    if (!candidate || !spot || finishingRef.current) return;
+    finishingRef.current = true;
     const rankIndex = RANK_INDEX[candidate.rank];
-    const fightBonus = effectPower(gear, "fight") * 0.04 + effectPower(gear, "rod") * 0.025;
-    const quickBonus = hookWindow * 0.08;
-    const successRate = Math.max(0.18, Math.min(0.98, 0.94 - rankIndex * 0.1 + fightBonus + quickBonus));
-    if (Math.random() > successRate) {
-      setPhase("escaped");
-      return;
-    }
-    const sizePower = effectPower(gear, "size");
+    const sizePower = gear.filter((item) => item.effect === "outfit").reduce((sum, item) => sum + item.power, 0);
     const sizeRoll = Math.min(1, Math.pow(Math.random(), 1 / (1 + sizePower * 0.22)));
     const size = Number((candidate.minCm + (candidate.maxCm - candidate.minCm) * sizeRoll).toFixed(1));
-    const coinPower = effectPower(gear, "coins");
-    const baseReward = 10 + rankIndex * 25 + Math.round(size / 8);
-    const reward = Math.round(baseReward * (1 + coinPower * 0.1));
     const isPersonalBest = await saveCatch({
       fishId: candidate.id,
       size,
       rank: candidate.rank,
       aquarium: candidate.aquarium,
-      coins: reward,
       spotId: spot.id,
       spotName: spot.name,
       habitat: spot.habitat,
       steps,
     });
-    setLast({ ...candidate, size, reward, isPersonalBest });
-    setCoins(await getCoins());
+    setLast({ ...candidate, size, isPersonalBest });
+    setTodayCatch((value) => value + 1);
     setPhase("result");
-  };
+    load();
+    void rankIndex;
+  }, [candidate, gear, load, spot, steps]);
 
-  const phaseText: Record<Phase, string> = {
-    idle: "キャストして魚を待とう",
-    waiting: "ウキを見ながら待っています…",
-    bite: `ヒット！ あと${hookWindow}秒`,
-    result: "釣り上げ成功！",
-    escaped: "逃げられました…もう一度挑戦！",
-  };
-  const luckScore = Math.floor(steps / 1000) + effectPower(gear, "luck") + effectPower(gear, "bait");
+  useEffect(() => {
+    if (phase !== "battle" || !candidate) return;
+    const config = BATTLE_CONFIG[candidate.rank];
+    const outfitPower = gear.filter((item) => item.effect === "outfit").reduce((sum, item) => sum + item.power, 0);
+    const reelPower = effectPower(gear, "reel");
+    const effectiveZone = Math.min(72, config.zone + reelPower * 3);
+    const effectiveSeconds = config.seconds * (1 - effectPower(gear, "rod") * 0.05);
+    const started = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - started;
+      const target = 50 + Math.sin(elapsed / (760 - RANK_INDEX[candidate.rank] * 45)) * (9 + RANK_INDEX[candidate.rank] * 1.7);
+      targetRef.current = target;
+      const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03);
+      const fishPull = Math.sin(elapsed / (240 - RANK_INDEX[candidate.rank] * 12)) * adjustedPull
+        + (Math.random() - 0.5) * adjustedPull;
+      const reel = holdingRef.current ? 1.25 + reelPower * 0.035 : -0.9;
+      const nextCursor = Math.max(0, Math.min(100, cursorRef.current + reel + fishPull));
+      cursorRef.current = nextCursor;
+      const inside = Math.abs(nextCursor - target) <= effectiveZone / 2;
+      const gain = 50 / (effectiveSeconds * 1000) * 100;
+      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain : -gain * 0.65)));
+      setCursor(nextCursor);
+      setTargetCenter(target);
+      setBattleProgress(progressRef.current);
+      if (progressRef.current >= 100) {
+        clearInterval(interval);
+        finishCatch();
+      } else if ((nextCursor <= 0 || nextCursor >= 100) && elapsed > 1800) {
+        clearInterval(interval);
+        setPhase("escaped");
+      }
+    }, 50);
+    return () => clearInterval(interval);
+  }, [candidate, finishCatch, gear, phase]);
+
+  const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
+  const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3);
+  const effectiveSeconds = config.seconds * (1 - effectPower(gear, "rod") * 0.05);
+  const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));
+  const equippedCooler = gear.find((item) => item.kind === "cooler");
+  const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
 
   return (
     <Screen>
-      <Header title="Fishing Game" sub={`所持コイン ${coins.toLocaleString()} 🪙`} />
+      <Header title="Fishing Game" sub={`${spot?.emoji ?? "🌿"} ${spot?.name ?? "みずべ公園"} ・ 本日${todayCatch}/${dailyCapacity}匹`} />
       <Card>
         <View style={ui.between}>
           <View>
             <Text style={ui.muted}>現在の釣り場</Text>
-            <Text style={styles.spot}>{spot?.emoji} {spot?.name ?? "みずべ公園"}</Text>
+            <Text style={styles.spot}>{HABITAT_NAMES[spot?.habitat ?? "pond"]}</Text>
           </View>
-          <View style={styles.habitatChip}>
-            <Text style={styles.habitatText}>{HABITAT_NAMES[spot?.habitat ?? "pond"]}</Text>
-          </View>
+          <Text style={ui.muted}>{bait ? `${bait.name}：${bait.targetRanks?.join("・")}狙い` : "餌がありません"}</Text>
         </View>
-        <Text style={ui.muted}>今日 {steps.toLocaleString()}歩 ・ レア補正 {luckScore}</Text>
       </Card>
 
       <Card style={styles.hero}>
-        <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={155} />
-        <Text style={styles.water}>
-          {phase === "bite" ? "💥 〰️ 🎣 〰️ 💥" : phase === "waiting" ? "🌊  〰️  ◉  〰️  🌊" : "🌊  〜  🎣  〜  🌊"}
-        </Text>
-        <Text style={[styles.phase, phase === "bite" && styles.bite]}>{phaseText[phase]}</Text>
-        {phase === "bite"
-          ? <Button title="今だ！ 引き上げる" onPress={hook} />
-          : <Button title={phase === "waiting" ? "待っています…" : "釣り糸を投げる"} onPress={cast} disabled={phase === "waiting"} />}
+        <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={175} />
+        <View style={styles.waterOverlay}>
+          {(phase === "approach" || phase === "bite") && (
+            <View style={[styles.shadow, { transform: [{ scale: 0.45 + shadowScale * 0.7 }] }]} />
+          )}
+          {(phase === "casting" || phase === "approach" || phase === "bite") && (
+            <View style={[styles.float, phase === "bite" && styles.floatDown]}><View style={styles.floatRed} /></View>
+          )}
+          {phase === "bite" && <Text style={styles.splash}>SPLASH!</Text>}
+        </View>
+
+        {phase === "idle" && <>
+          <Text style={styles.phase}>{todayCatch >= dailyCapacity ? "クーラーが満杯です" : bait ? "水面の好きな場所へ投げよう" : "交換画面で餌を購入してください"}</Text>
+          <Button title="キャストする（餌を1個消費）" onPress={cast} disabled={!bait || todayCatch >= dailyCapacity} />
+        </>}
+        {phase === "casting" && <Text style={styles.phase}>仕掛けを投げました…</Text>}
+        {phase === "approach" && <Text style={styles.phase}>魚影がウキへ近づいている…</Text>}
+        {phase === "bite" && <><Text style={styles.bite}>ウキが沈んだ！</Text><Button title="今だ！ 合わせる" onPress={startBattle} /></>}
+        {phase === "escaped" && <><Text style={styles.escape}>魚に逃げられました</Text><Button title="もう一度投げる" onPress={cast} /></>}
       </Card>
 
-      {last && (
+      {phase === "battle" && candidate && (
         <Card>
-          {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
-          <View style={styles.catch}>
-            <FishArt fishId={last.id} size={92} />
-            <View style={styles.catchInfo}>
-              <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
-              <Text style={styles.name}>{last.name}</Text>
-              <Text style={ui.body}>{last.size.toLocaleString()} cm　+{last.reward.toLocaleString()} 🪙</Text>
-            </View>
+          <View style={ui.between}>
+            <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
+            <Text style={ui.muted}>維持目標 {effectiveSeconds.toFixed(1)}秒</Text>
           </View>
-          <Text style={ui.muted}>{spot?.name}から{last.aquarium}へ格納しました</Text>
+          <Text style={styles.battleHelp}>長押しで巻く・離して緩める。魚マーカーを水色の範囲内に維持！</Text>
+          <View style={styles.gauge}>
+            <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
+            <View style={[styles.fishCursor, { left: `${Math.max(1, Math.min(97, cursor))}%` }]}><Text>🐟</Text></View>
+          </View>
+          <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%` }]} /></View>
+          <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
+          <Pressable
+            onPressIn={() => { holdingRef.current = true; }}
+            onPressOut={() => { holdingRef.current = false; }}
+            style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
+          >
+            <Text style={styles.reelText}>長押しでリールを巻く</Text>
+          </Pressable>
         </Card>
       )}
 
-      <Card>
-        <Text style={ui.h2}>装備効果</Text>
-        <Text style={ui.body}>{gear.length ? gear.map((item) => `${item.emoji}${item.name}`).join("　") : "ビギナー装備"}</Text>
-        <View style={styles.ranks}>
-          {RANKS.map((rank) => (
-            <View key={rank} style={[styles.rankPill, { backgroundColor: rankColors[rank] }]}>
-              <Text style={styles.rankText}>{rank}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={ui.muted}>場所によって出会える生き物が変わります。高ランクほどヒット後の成功率が低くなります。</Text>
-      </Card>
+      {phase === "result" && last && (
+        <Card style={styles.resultCard}>
+          <Text style={styles.caught}>CATCH!</Text>
+          {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
+          <FishArt fishId={last.id} size={150} />
+          <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
+          <Text style={styles.name}>{last.name}</Text>
+          <Text style={styles.size}>{last.size.toLocaleString()} cm</Text>
+          <Text style={ui.muted}>ポイント付与なし ・ {last.aquarium}へ格納しました</Text>
+          <Button title="続けて釣る" onPress={cast} />
+        </Card>
+      )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   spot: { fontSize: 19, fontWeight: "900", color: colors.ink },
-  habitatChip: { backgroundColor: colors.foam, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 99 },
-  habitatText: { color: colors.ocean, fontWeight: "900" },
-  hero: { gap: 18, alignItems: "stretch", paddingVertical: 26 },
-  water: { fontSize: 32, textAlign: "center" },
+  hero: { gap: 14, paddingVertical: 18 },
+  waterOverlay: { position: "absolute", top: 26, left: 20, right: 20, height: 160, alignItems: "center", justifyContent: "center" },
+  shadow: { width: 62, height: 22, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: 86 },
+  float: { width: 13, height: 35, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: 55 },
+  floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+  floatDown: { top: 82, height: 17 },
+  splash: { color: colors.white, fontWeight: "900", fontSize: 20, textShadowColor: colors.navy, textShadowRadius: 5 },
   phase: { textAlign: "center", color: colors.muted, fontWeight: "800", fontSize: 16 },
-  bite: { color: colors.coral, fontSize: 20 },
-  best: { textAlign: "center", color: colors.gold, fontWeight: "900", marginBottom: 8 },
-  catch: { flexDirection: "row", gap: 18, alignItems: "center", marginBottom: 12 },
-  catchInfo: { flex: 1 },
-  rank: { fontWeight: "900", fontSize: 13 },
-  name: { fontSize: 25, fontWeight: "900", color: colors.ink },
-  ranks: { flexDirection: "row", gap: 5, marginVertical: 12, flexWrap: "wrap" },
-  rankPill: { borderRadius: 9, minWidth: 34, padding: 7, alignItems: "center" },
-  rankText: { color: "white", fontWeight: "900" },
+  bite: { textAlign: "center", color: colors.coral, fontSize: 22, fontWeight: "900" },
+  escape: { textAlign: "center", color: colors.danger, fontSize: 18, fontWeight: "900" },
+  battleHelp: { color: colors.ink, lineHeight: 20, marginVertical: 12 },
+  gauge: { height: 58, backgroundColor: "#D9E6E7", borderRadius: 14, position: "relative", overflow: "hidden", borderWidth: 2, borderColor: colors.navy },
+  targetZone: { position: "absolute", top: 0, bottom: 0, backgroundColor: "rgba(33,182,168,.55)", borderLeftWidth: 2, borderRightWidth: 2, borderColor: colors.aqua },
+  fishCursor: { position: "absolute", top: 15, marginLeft: -12 },
+  progressTrack: { height: 13, backgroundColor: colors.line, borderRadius: 8, marginTop: 14, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: colors.gold },
+  progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
+  reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 12 },
+  reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
+  reelText: { color: colors.white, fontWeight: "900", fontSize: 16 },
+  resultCard: { alignItems: "center", gap: 7 },
+  caught: { color: colors.coral, fontSize: 28, fontWeight: "900" },
+  best: { color: colors.gold, fontWeight: "900" },
+  rank: { fontWeight: "900", fontSize: 14 },
+  name: { fontSize: 27, fontWeight: "900", color: colors.ink },
+  size: { fontSize: 20, fontWeight: "900", color: colors.ocean },
 });

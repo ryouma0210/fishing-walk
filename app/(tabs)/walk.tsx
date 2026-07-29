@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Pedometer } from "expo-sensors";
 import { useFocusEffect } from "expo-router";
-import { Card, Header, Screen, ui } from "../../src/components/ui";
+import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { colors } from "../../src/constants/theme";
-import { getStepsForMonth, saveSteps } from "../../src/database/db";
-
-const dayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+import { getStepsForMonth, getWalkPoints } from "../../src/database/db";
+import { requestHealthAccess, syncHealthMonth } from "../../src/services/healthService";
 
 export default function WalkScreen() {
   const now = new Date();
@@ -17,46 +14,36 @@ export default function WalkScreen() {
   const [days, setDays] = useState<{ day: string; steps: number }[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
   const [status, setStatus] = useState("歩数データを確認中");
-  const baseSteps = useRef(0);
+  const [points, setPoints] = useState(0);
 
   const loadMonth = useCallback(async () => {
     setDays(await getStepsForMonth(year, month));
+    setPoints(await getWalkPoints());
   }, [month, year]);
 
-  const syncToday = useCallback(async () => {
+  const syncSteps = useCallback(async () => {
+    setStatus("ヘルスケアの歩数を同期中");
+    const result = await syncHealthMonth(year, month);
+    setAvailable(result.permission === "granted");
+    setStatus(result.status);
     const current = new Date();
-    const start = new Date(current);
-    start.setHours(0, 0, 0, 0);
-    try {
-      const supported = await Pedometer.isAvailableAsync();
-      setAvailable(supported);
-      if (!supported) {
-        setStatus("この端末では歩数センサーを利用できません");
-        return;
-      }
-      const result = await Pedometer.getStepCountAsync(start, current);
-      baseSteps.current = result.steps;
-      setToday(result.steps);
-      await saveSteps(dayKey(current), result.steps);
-      setStatus("端末の歩数データと同期しました");
-    } catch {
-      setAvailable(false);
-      setStatus("モーション権限を確認してください");
-    }
-  }, []);
+    if (year === current.getFullYear() && month === current.getMonth() + 1) setToday(result.today);
+    await loadMonth();
+  }, [loadMonth, month, year]);
 
   useFocusEffect(useCallback(() => {
-    syncToday().then(loadMonth);
-  }, [loadMonth, syncToday]));
+    syncSteps();
+  }, [syncSteps]));
 
-  useEffect(() => {
-    const subscription = Pedometer.watchStepCount(async (result) => {
-      const total = baseSteps.current + result.steps;
-      setToday(total);
-      await saveSteps(dayKey(new Date()), total);
-    });
-    return () => subscription.remove();
-  }, []);
+  const connectHealth = async () => {
+    setStatus("歩数の読み取り権限を確認中");
+    const granted = await requestHealthAccess();
+    if (granted) await syncSteps();
+    else {
+      setAvailable(false);
+      setStatus("端末の設定から歩数の読み取りを許可してください");
+    }
+  };
 
   const changeMonth = (delta: number) => {
     const date = new Date(year, month - 1 + delta, 1);
@@ -91,6 +78,16 @@ export default function WalkScreen() {
         </View>
         <View style={styles.track}><View style={[styles.progress, { width: `${Math.min(100, today / 100)}%` }]} /></View>
         <Text style={ui.muted}>目標 10,000歩 ・ 達成率 {Math.min(100, Math.round(today / 100))}%</Text>
+        {!available && (
+          <View style={styles.connect}>
+            <Text style={ui.body}>アプリを開く前に歩いた分も、端末のヘルスケアから取得します。</Text>
+            <Button title="歩数データを連携" onPress={connectHealth} />
+          </View>
+        )}
+        <View style={styles.pointBox}>
+          <Text style={styles.pointLabel}>交換に使える歩数ポイント</Text>
+          <Text style={styles.pointValue}>{points.toLocaleString()} pt</Text>
+        </View>
       </Card>
 
       <Card>
@@ -147,4 +144,8 @@ const styles = StyleSheet.create({
   milestone: { flex: 1, paddingVertical: 7, borderRadius: 9, backgroundColor: colors.line, alignItems: "center" },
   reached: { backgroundColor: colors.gold },
   milestoneText: { fontSize: 11, fontWeight: "800", color: colors.ink },
+  pointBox: { marginTop: 12, backgroundColor: colors.navy, borderRadius: 13, padding: 11, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  pointLabel: { color: colors.white, fontSize: 12, fontWeight: "700" },
+  pointValue: { color: colors.gold, fontSize: 18, fontWeight: "900" },
+  connect: { marginTop: 12, gap: 9 },
 });
