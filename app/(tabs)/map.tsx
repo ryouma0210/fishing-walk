@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import MapView, { Circle, Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import { Card, ui } from "../../src/components/ui";
@@ -20,8 +20,9 @@ import { syncTodaySteps } from "../../src/services/stepService";
 
 export default function MapScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
-  const tiltedRef = useRef(true);
+  const tiltedRef = useRef(false);
   const [location, setLocation] = useState<StoredLocation | null>(null);
   const [spots, setSpots] = useState<FishingSpot[]>([]);
   const [selected, setSelected] = useState<FishingSpot | null>(null);
@@ -32,7 +33,7 @@ export default function MapScreen() {
     const saved = await getMapState();
     setLocation(saved.location);
     setSpots(saved.spots);
-    setSelected(saved.selectedSpot ?? saved.spots[0]);
+    setSelected(null);
     setSteps((await syncTodaySteps()).steps);
     try {
       const result = await requestCurrentLocation();
@@ -45,17 +46,11 @@ export default function MapScreen() {
         setSpots(result.spots ?? saved.spots);
         setStatus(`現在地を取得しました（精度 約${Math.round(result.location.accuracy ?? 0)}m）`);
         mapRef.current?.animateToRegion({
-          latitude: result.location.latitude + 0.0013,
+          latitude: result.location.latitude,
           longitude: result.location.longitude,
-          latitudeDelta: 0.018,
-          longitudeDelta: 0.018,
+          latitudeDelta: 0.0054,
+          longitudeDelta: 0.0054,
         }, 500);
-        setTimeout(() => mapRef.current?.animateCamera({
-          center: { latitude: result.location.latitude + 0.0013, longitude: result.location.longitude },
-          pitch: 48,
-          heading: 0,
-          zoom: 17,
-        }, { duration: 650 }), 550);
       }
     } catch {
       setStatus("現在地を取得できません。保存済みの地図を表示します");
@@ -98,10 +93,19 @@ export default function MapScreen() {
   };
 
   const updatePerspective = (region: Region) => {
-    const shouldTilt = region.latitudeDelta < 0.015;
+    const shouldTilt = region.latitudeDelta <= 0.0018;
     if (shouldTilt === tiltedRef.current) return;
     tiltedRef.current = shouldTilt;
     mapRef.current?.animateCamera({ pitch: shouldTilt ? 55 : 0 }, { duration: 350 });
+  };
+
+  const changeZoom = async (delta: number) => {
+    const camera = await mapRef.current?.getCamera();
+    if (!camera) return;
+    const zoom = Math.max(3, Math.min(21, (camera.zoom ?? 18) + delta));
+    const shouldTilt = zoom >= 19.5;
+    tiltedRef.current = shouldTilt;
+    mapRef.current?.animateCamera({ zoom, pitch: shouldTilt ? 55 : 0 }, { duration: 300 });
   };
 
   const openWalkingRoute = async () => {
@@ -118,12 +122,12 @@ export default function MapScreen() {
   const initial: Region = {
     latitude: location?.latitude ?? 35.6812,
     longitude: location?.longitude ?? 139.7671,
-    latitudeDelta: 0.018,
-    longitudeDelta: 0.018,
+    latitudeDelta: 0.0054,
+    longitudeDelta: 0.0054,
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
+    <View style={styles.screen}>
         <MapView
           ref={mapRef}
           style={styles.map}
@@ -173,14 +177,23 @@ export default function MapScreen() {
             );
           })}
         </MapView>
-      <View style={styles.titleHud}>
+      <View style={[styles.titleHud, { top: insets.top + 10 }]}>
         <Text style={styles.title}>Fishing Map</Text>
         <Text numberOfLines={2} style={styles.status}>{status}</Text>
         <Text style={styles.poiHint}>飲食店・駅・公園をタップして釣り場に設定</Text>
       </View>
-      <View style={styles.mapHud}>
+      <View style={[styles.mapHud, { top: insets.top + 18 }]}>
         <Text style={styles.mapHudLabel}>TODAY</Text>
         <Text style={styles.mapHudValue}>{steps.toLocaleString()}歩</Text>
+      </View>
+      <View style={[styles.zoomControls, { top: insets.top + 116 }]}>
+        <Pressable accessibilityLabel="地図を拡大" onPress={() => changeZoom(1)} style={styles.zoomButton}>
+          <Text style={styles.zoomText}>＋</Text>
+        </Pressable>
+        <View style={styles.zoomDivider} />
+        <Pressable accessibilityLabel="地図を縮小" onPress={() => changeZoom(-1)} style={styles.zoomButton}>
+          <Text style={styles.zoomText}>−</Text>
+        </Pressable>
       </View>
       {selected && (
         <Card style={styles.spotCard}>
@@ -207,14 +220,14 @@ export default function MapScreen() {
           </View>
         </Card>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.foam },
   map: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
-  titleHud: { position: "absolute", top: 10, left: 12, right: 12, backgroundColor: "rgba(255,255,255,.94)", borderRadius: 17, paddingHorizontal: 14, paddingVertical: 10, shadowColor: colors.navy, shadowOpacity: .14, shadowRadius: 8 },
+  titleHud: { position: "absolute", left: 12, right: 12, backgroundColor: "rgba(255,255,255,.94)", borderRadius: 17, paddingHorizontal: 14, paddingVertical: 10, shadowColor: colors.navy, shadowOpacity: .14, shadowRadius: 8 },
   title: { fontSize: 20, fontWeight: "900", color: colors.navy },
   status: { fontSize: 11, color: colors.muted, marginTop: 1, paddingRight: 90 },
   poiHint: { fontSize: 10, color: colors.ocean, fontWeight: "800", marginTop: 4 },
@@ -234,7 +247,11 @@ const styles = StyleSheet.create({
   beaconEmoji: { fontSize: 25 },
   beaconStem: { width: 5, height: 25, backgroundColor: colors.ocean },
   beaconBase: { width: 28, height: 9, borderRadius: 10, backgroundColor: colors.aqua, borderWidth: 2, borderColor: colors.white },
-  mapHud: { position: "absolute", top: 18, right: 20, backgroundColor: "rgba(6,59,76,.9)", borderRadius: 16, paddingHorizontal: 13, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(255,255,255,.55)" },
+  mapHud: { position: "absolute", right: 20, backgroundColor: "rgba(6,59,76,.9)", borderRadius: 16, paddingHorizontal: 13, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(255,255,255,.55)" },
   mapHudLabel: { color: colors.aqua, fontSize: 9, fontWeight: "900" },
   mapHudValue: { color: colors.white, fontSize: 16, fontWeight: "900" },
+  zoomControls: { position: "absolute", right: 18, width: 46, borderRadius: 14, overflow: "hidden", backgroundColor: "rgba(255,255,255,.96)", borderWidth: 1, borderColor: colors.line, shadowColor: colors.navy, shadowOpacity: .18, shadowRadius: 7 },
+  zoomButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  zoomText: { fontSize: 25, lineHeight: 28, fontWeight: "700", color: colors.navy },
+  zoomDivider: { height: 1, backgroundColor: colors.line },
 });
