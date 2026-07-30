@@ -2,15 +2,20 @@ import { ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors } from "../constants/theme";
+import { useAppSettings } from "../services/settingsService";
 
 export function Screen({children,scroll=true}:{children:ReactNode;scroll?:boolean}) {
   const body = scroll ? <ScrollView contentContainerStyle={s.content}>{children}</ScrollView> : <View style={s.content}>{children}</View>;
   return <SafeAreaView style={s.safe} edges={["top"]}>{body}</SafeAreaView>;
 }
-export function Header({title,sub}:{title:string;sub?:string}) { return <View style={s.header}><Text style={s.title}>{title}</Text>{sub&&<Text style={s.sub}>{sub}</Text>}</View>; }
+export function Header({title,sub}:{title:string;sub?:string}) {
+  const { textScale } = useAppSettings();
+  return <View style={s.header}><Text style={[s.title, { fontSize: 27 * textScale }]}>{title}</Text>{sub&&<Text style={[s.sub, { fontSize: 13 * textScale }]}>{sub}</Text>}</View>;
+}
 export function Card({children,style}:{children:ReactNode;style?:ViewStyle}) { return <View style={[s.card,style]}>{children}</View>; }
 export function Button({title,onPress,disabled=false,kind="primary"}:{title:string;onPress:()=>void;disabled?:boolean;kind?:"primary"|"secondary"}) {
-  return <Pressable onPress={onPress} disabled={disabled} style={({pressed})=>[s.button,kind==="secondary"&&s.secondary,(pressed||disabled)&&s.dim]}><Text style={[s.buttonText,kind==="secondary"&&s.secondaryText]}>{title}</Text></Pressable>;
+  const { textScale } = useAppSettings();
+  return <Pressable onPress={onPress} disabled={disabled} style={({pressed})=>[s.button,kind==="secondary"&&s.secondary,(pressed||disabled)&&s.dim]}><Text style={[s.buttonText, { fontSize: 15 * textScale },kind==="secondary"&&s.secondaryText]}>{title}</Text></Pressable>;
 }
 export const ui = StyleSheet.create({
   row:{flexDirection:"row",alignItems:"center"}, between:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
