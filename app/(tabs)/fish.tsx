@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "expo-router";
-import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Button } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
 import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
 import { colors, rankColors } from "../../src/constants/theme";
@@ -23,14 +24,14 @@ type CatchResult = {
 type BattleConfig = { zone: number; seconds: number; pull: number };
 
 const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
-  E: { zone: 58, seconds: 2, pull: 0.35 },
-  D: { zone: 50, seconds: 2.5, pull: 0.45 },
-  C: { zone: 43, seconds: 3.2, pull: 0.58 },
-  B: { zone: 36, seconds: 4, pull: 0.72 },
-  A: { zone: 29, seconds: 5, pull: 0.88 },
-  S: { zone: 23, seconds: 6.5, pull: 1.05 },
-  SS: { zone: 17, seconds: 8, pull: 1.25 },
-  SSS: { zone: 12, seconds: 10, pull: 1.5 },
+  E: { zone: 30, seconds: 38, pull: 0.65 },
+  D: { zone: 27, seconds: 45, pull: 0.78 },
+  C: { zone: 24, seconds: 52, pull: 0.92 },
+  B: { zone: 21, seconds: 60, pull: 1.08 },
+  A: { zone: 18, seconds: 70, pull: 1.28 },
+  S: { zone: 14, seconds: 82, pull: 1.52 },
+  SS: { zone: 10, seconds: 96, pull: 1.82 },
+  SSS: { zone: 6, seconds: 115, pull: 2.2 },
 };
 
 function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
@@ -51,6 +52,8 @@ function baitRank(steps: number, bait: ShopItem) {
 }
 
 export default function FishScreen() {
+  const router = useRouter();
+  const { height } = useWindowDimensions();
   const [steps, setSteps] = useState(0);
   const [spot, setSpot] = useState<FishingSpot | null>(null);
   const [gear, setGear] = useState<ShopItem[]>([]);
@@ -154,7 +157,7 @@ export default function FishScreen() {
     if (!candidate || !spot || finishingRef.current) return;
     finishingRef.current = true;
     const rankIndex = RANK_INDEX[candidate.rank];
-    const sizePower = gear.filter((item) => item.effect === "outfit").reduce((sum, item) => sum + item.power, 0);
+    const sizePower = effectPower(gear, "outfit");
     const sizeRoll = Math.min(1, Math.pow(Math.random(), 1 / (1 + sizePower * 0.22)));
     const size = Number((candidate.minCm + (candidate.maxCm - candidate.minCm) * sizeRoll).toFixed(1));
     const isPersonalBest = await saveCatch({
@@ -177,7 +180,7 @@ export default function FishScreen() {
   useEffect(() => {
     if (phase !== "battle" || !candidate) return;
     const config = BATTLE_CONFIG[candidate.rank];
-    const outfitPower = gear.filter((item) => item.effect === "outfit").reduce((sum, item) => sum + item.power, 0);
+    const outfitPower = effectPower(gear, "outfit");
     const reelPower = effectPower(gear, "reel");
     const effectiveZone = Math.min(72, config.zone + reelPower * 3);
     const effectiveSeconds = config.seconds * (1 - effectPower(gear, "rod") * 0.05);
@@ -216,21 +219,19 @@ export default function FishScreen() {
   const equippedCooler = gear.find((item) => item.kind === "cooler");
   const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
 
-  return (
-    <Screen>
-      <Header title="Fishing Game" sub={`${spot?.emoji ?? "🌿"} ${spot?.name ?? "みずべ公園"} ・ 本日${todayCatch}/${dailyCapacity}匹`} />
-      <Card>
-        <View style={ui.between}>
-          <View>
-            <Text style={ui.muted}>現在の釣り場</Text>
-            <Text style={styles.spot}>{HABITAT_NAMES[spot?.habitat ?? "pond"]}</Text>
-          </View>
-          <Text style={ui.muted}>{bait ? `${bait.name}：${bait.targetRanks?.join("・")}狙い` : "餌がありません"}</Text>
-        </View>
-      </Card>
+  const exitFishing = () => router.replace("/(tabs)/map");
 
-      <Card style={styles.hero}>
-        <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={175} />
+  return (
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+      <View style={styles.scene}>
+        <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={Math.max(520, height)} />
+        <View style={styles.sceneShade} />
+        <View style={styles.topHud}>
+          <Text style={styles.hudTitle}>{spot?.emoji ?? "🌿"} {spot?.name ?? "釣り場"}</Text>
+          <Text style={styles.hudText}>{HABITAT_NAMES[spot?.habitat ?? "pond"]} ・ 本日 {todayCatch}/{dailyCapacity}匹</Text>
+          <Text style={styles.hudText}>{bait ? `${bait.name}／${bait.targetRanks?.join("・")}狙い` : "餌がありません"}</Text>
+        </View>
+
         <View style={styles.waterOverlay}>
           {(phase === "approach" || phase === "bite") && (
             <View style={[styles.shadow, { transform: [{ scale: 0.45 + shadowScale * 0.7 }] }]} />
@@ -241,78 +242,108 @@ export default function FishScreen() {
           {phase === "bite" && <Text style={styles.splash}>SPLASH!</Text>}
         </View>
 
-        {phase === "idle" && <>
-          <Text style={styles.phase}>{todayCatch >= dailyCapacity ? "クーラーが満杯です" : bait ? "水面の好きな場所へ投げよう" : "交換画面で餌を購入してください"}</Text>
-          <Button title="キャストする（餌を1個消費）" onPress={cast} disabled={!bait || todayCatch >= dailyCapacity} />
-        </>}
-        {phase === "casting" && <Text style={styles.phase}>仕掛けを投げました…</Text>}
-        {phase === "approach" && <Text style={styles.phase}>魚影がウキへ近づいている…</Text>}
-        {phase === "bite" && <><Text style={styles.bite}>ウキが沈んだ！</Text><Button title="今だ！ 合わせる" onPress={startBattle} /></>}
-        {phase === "escaped" && <><Text style={styles.escape}>魚に逃げられました</Text><Button title="もう一度投げる" onPress={cast} /></>}
-      </Card>
-
-      {phase === "battle" && candidate && (
-        <Card>
-          <View style={ui.between}>
-            <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
-            <Text style={ui.muted}>維持目標 {effectiveSeconds.toFixed(1)}秒</Text>
+        {phase !== "result" && (
+          <View style={styles.controlPanel}>
+            {phase === "idle" && <>
+              <Text style={styles.panelTitle}>この場所で釣りますか？</Text>
+              <Text style={styles.panelHelp}>{todayCatch >= dailyCapacity ? "クーラーが満杯です" : bait ? "投げると餌を1個消費します" : "交換画面で餌を購入してください"}</Text>
+              <View style={styles.choiceActions}>
+                <View style={styles.choiceAction}><Button title="終了する" kind="secondary" onPress={exitFishing} /></View>
+                <View style={styles.choiceAction}><Button title="投げる" onPress={cast} disabled={!bait || todayCatch >= dailyCapacity} /></View>
+              </View>
+            </>}
+            {phase === "casting" && <Text style={styles.phase}>仕掛けを投げました…</Text>}
+            {phase === "approach" && <Text style={styles.phase}>魚影がウキへ近づいている…</Text>}
+            {phase === "bite" && <>
+              <Text style={styles.bite}>ウキが沈んだ！</Text>
+              <Button title="今だ！ 合わせる" onPress={startBattle} />
+            </>}
+            {phase === "escaped" && <>
+              <Text style={styles.escape}>魚に逃げられました</Text>
+              <View style={styles.choiceActions}>
+                <View style={styles.choiceAction}><Button title="終了する" kind="secondary" onPress={exitFishing} /></View>
+                <View style={styles.choiceAction}><Button title="もう一度投げる" onPress={cast} /></View>
+              </View>
+            </>}
+            {phase === "battle" && candidate && <>
+              <View style={styles.between}>
+                <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
+                <Text style={styles.muted}>維持目標 {effectiveSeconds.toFixed(1)}秒</Text>
+              </View>
+              <Text style={styles.battleHelp}>魚を水色の範囲内に維持</Text>
+              <View style={styles.gauge}>
+                <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
+                <View style={[styles.fishCursor, { left: `${Math.max(1, Math.min(97, cursor))}%` }]}><Text>🐟</Text></View>
+              </View>
+              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%` }]} /></View>
+              <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
+              <Pressable
+                onPressIn={() => { holdingRef.current = true; }}
+                onPressOut={() => { holdingRef.current = false; }}
+                style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
+              >
+                <Text style={styles.reelText}>長押しでリールを巻く</Text>
+              </Pressable>
+            </>}
           </View>
-          <Text style={styles.battleHelp}>長押しで巻く・離して緩める。魚マーカーを水色の範囲内に維持！</Text>
-          <View style={styles.gauge}>
-            <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
-            <View style={[styles.fishCursor, { left: `${Math.max(1, Math.min(97, cursor))}%` }]}><Text>🐟</Text></View>
-          </View>
-          <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%` }]} /></View>
-          <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
-          <Pressable
-            onPressIn={() => { holdingRef.current = true; }}
-            onPressOut={() => { holdingRef.current = false; }}
-            style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
-          >
-            <Text style={styles.reelText}>長押しでリールを巻く</Text>
-          </Pressable>
-        </Card>
-      )}
+        )}
 
-      {phase === "result" && last && (
-        <Card style={styles.resultCard}>
-          <Text style={styles.caught}>CATCH!</Text>
-          {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
-          <FishArt fishId={last.id} size={150} />
-          <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
-          <Text style={styles.name}>{last.name}</Text>
-          <Text style={styles.size}>{last.size.toLocaleString()} cm</Text>
-          <Text style={ui.muted}>ポイント付与なし ・ {last.aquarium}へ格納しました</Text>
-          <Button title="続けて釣る" onPress={cast} />
-        </Card>
-      )}
-    </Screen>
+        {phase === "result" && last && (
+          <View style={styles.resultPanel}>
+            <Text style={styles.caught}>CATCH!</Text>
+            {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
+            <FishArt fishId={last.id} size={130} />
+            <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
+            <Text style={styles.name}>{last.name}</Text>
+            <Text style={styles.size}>{last.size.toLocaleString()} cm</Text>
+            <Text style={styles.muted}>ポイント付与なし ・ {last.aquarium}へ格納</Text>
+            <View style={styles.resultActions}>
+              <View style={styles.resultAction}><Button title="釣りをやめる" kind="secondary" onPress={exitFishing} /></View>
+              <View style={styles.resultAction}><Button title="続けて釣る" onPress={cast} /></View>
+            </View>
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  spot: { fontSize: 19, fontWeight: "900", color: colors.ink },
-  hero: { gap: 14, paddingVertical: 18 },
-  waterOverlay: { position: "absolute", top: 26, left: 20, right: 20, height: 160, alignItems: "center", justifyContent: "center" },
-  shadow: { width: 62, height: 22, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: 86 },
-  float: { width: 13, height: 35, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: 55 },
+  screen: { flex: 1, backgroundColor: colors.navy },
+  scene: { flex: 1, position: "relative", overflow: "hidden" },
+  sceneShade: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(2,31,43,.12)" },
+  topHud: { position: "absolute", top: 12, left: 12, right: 12, backgroundColor: "rgba(6,59,76,.88)", borderRadius: 17, padding: 12 },
+  hudTitle: { color: colors.white, fontSize: 19, fontWeight: "900" },
+  hudText: { color: "#D7F5F2", fontSize: 11, fontWeight: "700", marginTop: 2 },
+  waterOverlay: { position: "absolute", top: "18%", left: 20, right: 20, height: "42%", alignItems: "center", justifyContent: "center" },
+  shadow: { width: 82, height: 28, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: "52%" },
+  float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
   floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
-  floatDown: { top: 82, height: 17 },
-  splash: { color: colors.white, fontWeight: "900", fontSize: 20, textShadowColor: colors.navy, textShadowRadius: 5 },
-  phase: { textAlign: "center", color: colors.muted, fontWeight: "800", fontSize: 16 },
+  floatDown: { top: "54%", height: 18 },
+  splash: { color: colors.white, fontWeight: "900", fontSize: 27, textShadowColor: colors.navy, textShadowRadius: 5 },
+  controlPanel: { position: "absolute", left: 12, right: 12, bottom: 12, backgroundColor: "rgba(255,255,255,.95)", borderRadius: 22, padding: 15, gap: 9 },
+  panelTitle: { textAlign: "center", color: colors.navy, fontWeight: "900", fontSize: 20 },
+  panelHelp: { textAlign: "center", color: colors.muted, fontWeight: "700", fontSize: 12 },
+  choiceActions: { flexDirection: "row", gap: 8 },
+  choiceAction: { flex: 1 },
+  between: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  muted: { fontSize: 11, color: colors.muted, textAlign: "center" },
+  phase: { textAlign: "center", color: colors.navy, fontWeight: "900", fontSize: 18, paddingVertical: 12 },
   bite: { textAlign: "center", color: colors.coral, fontSize: 22, fontWeight: "900" },
   escape: { textAlign: "center", color: colors.danger, fontSize: 18, fontWeight: "900" },
-  battleHelp: { color: colors.ink, lineHeight: 20, marginVertical: 12 },
+  battleHelp: { color: colors.ink, textAlign: "center", fontSize: 12 },
   gauge: { height: 58, backgroundColor: "#D9E6E7", borderRadius: 14, position: "relative", overflow: "hidden", borderWidth: 2, borderColor: colors.navy },
   targetZone: { position: "absolute", top: 0, bottom: 0, backgroundColor: "rgba(33,182,168,.55)", borderLeftWidth: 2, borderRightWidth: 2, borderColor: colors.aqua },
   fishCursor: { position: "absolute", top: 15, marginLeft: -12 },
-  progressTrack: { height: 13, backgroundColor: colors.line, borderRadius: 8, marginTop: 14, overflow: "hidden" },
+  progressTrack: { height: 13, backgroundColor: colors.line, borderRadius: 8, marginTop: 3, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: colors.gold },
   progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
-  reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 12 },
+  reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 2 },
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelText: { color: colors.white, fontWeight: "900", fontSize: 16 },
-  resultCard: { alignItems: "center", gap: 7 },
+  resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
+  resultActions: { flexDirection: "row", gap: 8, alignSelf: "stretch", marginTop: 4 },
+  resultAction: { flex: 1 },
   caught: { color: colors.coral, fontSize: 28, fontWeight: "900" },
   best: { color: colors.gold, fontWeight: "900" },
   rank: { fontWeight: "900", fontSize: 14 },

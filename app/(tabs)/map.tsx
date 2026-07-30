@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import MapView, { Circle, Marker, Polyline, PROVIDER_GOOGLE, Region } from "react-native-maps";
+import MapView, { Circle, Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import { Card, ui } from "../../src/components/ui";
 import { FishingSpot, HABITAT_NAMES } from "../../src/constants/game";
 import { colors } from "../../src/constants/theme";
@@ -17,7 +17,6 @@ import {
   watchCurrentLocation,
 } from "../../src/services/locationService";
 import { syncTodaySteps } from "../../src/services/stepService";
-import { calculateWalkingRoute, WalkingRoute } from "../../src/services/routeService";
 
 export default function MapScreen() {
   const router = useRouter();
@@ -28,10 +27,6 @@ export default function MapScreen() {
   const [selected, setSelected] = useState<FishingSpot | null>(null);
   const [steps, setSteps] = useState(0);
   const [status, setStatus] = useState("位置情報を確認中");
-  const [route, setRoute] = useState<WalkingRoute | null>(null);
-  const [routeVisible, setRouteVisible] = useState(false);
-  const [routeLoading, setRouteLoading] = useState(false);
-  const [routeError, setRouteError] = useState("");
 
   const load = useCallback(async () => {
     const saved = await getMapState();
@@ -85,10 +80,6 @@ export default function MapScreen() {
   }, [load]));
 
   const choose = async (spot: FishingSpot) => {
-    if (routeVisible) {
-      setRouteLoading(true);
-      setRouteError("");
-    }
     setSelected(spot);
     await selectSpot(spot);
   };
@@ -113,54 +104,10 @@ export default function MapScreen() {
     mapRef.current?.animateCamera({ pitch: shouldTilt ? 55 : 0 }, { duration: 350 });
   };
 
-  useEffect(() => {
-    if (!routeVisible || !location || !selected) return;
-    let active = true;
-    calculateWalkingRoute(location, selected)
-      .then((nextRoute) => {
-        if (!active) return;
-        setRoute(nextRoute);
-        if (nextRoute.coordinates.length > 1) {
-          mapRef.current?.fitToCoordinates(nextRoute.coordinates, {
-            animated: true,
-            edgePadding: { top: 150, right: 55, bottom: 235, left: 55 },
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        const reason = error instanceof Error ? error.message : "";
-        setRouteError(reason === "api-key-expired"
-          ? "Google Maps APIキーの有効期限が切れています"
-          : reason === "routes-api-disabled"
-            ? "Google CloudでRoutes APIを有効にしてください"
-            : "徒歩経路を取得できません。Routes APIの設定と通信状況を確認してください");
-      })
-      .finally(() => {
-        if (active) setRouteLoading(false);
-      });
-    return () => { active = false; };
-  }, [location, routeVisible, selected]);
-
-  const showWalkingRoute = () => {
-    setRoute(null);
-    setRouteLoading(true);
-    setRouteError("");
-    setRouteVisible(true);
-  };
-
-  const closeWalkingRoute = () => {
-    setRouteVisible(false);
-    setRoute(null);
-    setRouteError("");
-  };
-
   const openWalkingRoute = async () => {
     if (!selected) return;
     const destination = `${selected.latitude},${selected.longitude}`;
-    const url = Platform.OS === "ios"
-      ? `http://maps.apple.com/?daddr=${destination}&dirflg=w`
-      : `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=walking`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=walking`;
     await Linking.openURL(url);
   };
 
@@ -202,15 +149,6 @@ export default function MapScreen() {
               radius={300}
               fillColor="rgba(33,182,168,0.12)"
               strokeColor={colors.aqua}
-            />
-          )}
-          {routeVisible && route && (
-            <Polyline
-              coordinates={route.coordinates}
-              strokeColor="#147DE0"
-              strokeWidth={7}
-              lineCap="round"
-              lineJoin="round"
             />
           )}
           {spots.map((spot) => {
@@ -256,15 +194,9 @@ export default function MapScreen() {
             </Text>
           </View>
           <View style={styles.actions}>
-            {!routeVisible ? (
-              <Pressable onPress={showWalkingRoute} style={({ pressed }) => [styles.routeButton, pressed && styles.dim]}>
-                <Text style={styles.routeButtonText}>アプリ内経路</Text>
-              </Pressable>
-            ) : (
-              <Pressable onPress={closeWalkingRoute} style={({ pressed }) => [styles.routeButton, pressed && styles.dim]}>
-                <Text style={styles.routeButtonText}>経路を閉じる</Text>
-              </Pressable>
-            )}
+            <Pressable onPress={openWalkingRoute} style={({ pressed }) => [styles.routeButton, pressed && styles.dim]}>
+              <Text style={styles.routeButtonText}>Googleマップで徒歩ナビ</Text>
+            </Pressable>
             <Pressable
               disabled={!canFish}
               onPress={() => router.push("/(tabs)/fish")}
@@ -273,25 +205,6 @@ export default function MapScreen() {
               <Text style={styles.fishButtonText}>この場所で釣る</Text>
             </Pressable>
           </View>
-          {routeVisible && (
-            <View style={styles.routeInfo}>
-              {routeLoading ? (
-                <Text style={styles.routeLoading}>徒歩経路を計算中…</Text>
-              ) : route ? (
-                <>
-                  <View>
-                    <Text style={styles.routeMetric}>{route.distanceMeters >= 1000 ? `${(route.distanceMeters / 1000).toFixed(1)} km` : `${route.distanceMeters} m`}</Text>
-                    <Text style={styles.routeLabel}>徒歩 約{Math.max(1, Math.ceil(route.durationSeconds / 60))}分</Text>
-                  </View>
-                  <Pressable onPress={openWalkingRoute} style={styles.navigationButton}>
-                    <Text style={styles.navigationButtonText}>外部マップで本格ナビ</Text>
-                  </Pressable>
-                </>
-              ) : (
-                <Text style={styles.routeError}>{routeError}</Text>
-              )}
-            </View>
-          )}
         </Card>
       )}
     </SafeAreaView>
@@ -309,17 +222,10 @@ const styles = StyleSheet.create({
   spotName: { fontSize: 18, fontWeight: "900", color: colors.ink },
   state: { fontSize: 12, fontWeight: "900", maxWidth: 105, textAlign: "right" },
   actions: { flexDirection: "row", gap: 8 },
-  routeButton: { flex: 0.42, backgroundColor: colors.foam, borderWidth: 1, borderColor: colors.aqua, padding: 12, borderRadius: 13, alignItems: "center" },
+  routeButton: { flex: 0.52, backgroundColor: colors.foam, borderWidth: 1, borderColor: colors.aqua, padding: 12, borderRadius: 13, alignItems: "center" },
   routeButtonText: { color: colors.navy, fontWeight: "900" },
-  fishButton: { flex: 0.58, backgroundColor: colors.coral, padding: 12, borderRadius: 13, alignItems: "center" },
+  fishButton: { flex: 0.48, backgroundColor: colors.coral, padding: 12, borderRadius: 13, alignItems: "center" },
   fishButtonText: { color: colors.white, fontWeight: "900" },
-  routeInfo: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingTop: 2 },
-  routeMetric: { color: colors.navy, fontWeight: "900", fontSize: 18 },
-  routeLabel: { color: colors.muted, fontWeight: "800", fontSize: 11 },
-  routeLoading: { color: colors.ocean, fontWeight: "800", paddingVertical: 8 },
-  routeError: { color: colors.danger, fontWeight: "700", fontSize: 11, flex: 1 },
-  navigationButton: { backgroundColor: colors.navy, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
-  navigationButtonText: { color: colors.white, fontWeight: "900", fontSize: 11 },
   dim: { opacity: 0.45 },
   beacon: { width: 68, height: 94, alignItems: "center" },
   beaconLocked: { opacity: 0.42 },
