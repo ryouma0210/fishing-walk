@@ -298,6 +298,37 @@ export async function unequipKind(kind: GearKind) {
   );
 }
 
+export async function equipOutfitSet(stage: number) {
+  const safeStage = Math.max(1, Math.min(4, Math.floor(stage)));
+  const itemIds = [`hat${safeStage}`, `top${safeStage}`, `bottom${safeStage}`, `shoes${safeStage}`];
+  const database = await db();
+  const owned = await database.getAllAsync<{ item_id: string }>(
+    `SELECT item_id FROM inventory WHERE item_id IN (${itemIds.map(() => "?").join(",")})`,
+    ...itemIds,
+  );
+  if (owned.length !== itemIds.length) return false;
+  const apparelIds = SHOP.filter((item) => ["hat", "top", "bottom", "shoes"].includes(item.kind)).map((item) => item.id);
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE inventory SET equipped=0 WHERE item_id IN (${apparelIds.map(() => "?").join(",")})`,
+      ...apparelIds,
+    );
+    await database.runAsync(
+      `UPDATE inventory SET equipped=1 WHERE item_id IN (${itemIds.map(() => "?").join(",")})`,
+      ...itemIds,
+    );
+  });
+  return true;
+}
+
+export async function unequipOutfit() {
+  const apparelIds = SHOP.filter((item) => ["hat", "top", "bottom", "shoes"].includes(item.kind)).map((item) => item.id);
+  await (await db()).runAsync(
+    `UPDATE inventory SET equipped=0 WHERE item_id IN (${apparelIds.map(() => "?").join(",")})`,
+    ...apparelIds,
+  );
+}
+
 export async function getInventory() {
   return (await db()).getAllAsync<InventoryRow>("SELECT item_id,equipped,purchased_at FROM inventory");
 }

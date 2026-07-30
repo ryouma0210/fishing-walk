@@ -37,6 +37,7 @@ export type FishingSpot = {
   latitude: number;
   longitude: number;
   unlockSteps: number;
+  placeType?: "restaurant" | "station" | "park";
 };
 
 export const RANKS: Rank[] = ["E", "D", "C", "B", "A", "S", "SS", "SSS"];
@@ -188,9 +189,11 @@ export const DEFAULT_GEAR: Record<GearKind, string> = {
 
 export function createFishingSpots(latitude: number, longitude: number): FishingSpot[] {
   return [
-    { id:"pond-local",name:"みずべ公園",habitat:"pond",emoji:"🌿",latitude:latitude+0.0018,longitude:longitude+0.0012,unlockSteps:0 },
-    { id:"river-local",name:"ウォーク川",habitat:"river",emoji:"🏞️",latitude:latitude-0.0032,longitude:longitude+0.0026,unlockSteps:1500 },
-    { id:"lake-local",name:"青空湖",habitat:"lake",emoji:"⛰️",latitude:latitude+0.0042,longitude:longitude-0.0036,unlockSteps:4000 },
-    { id:"sea-local",name:"潮風堤防",habitat:"sea",emoji:"🌊",latitude:latitude-0.0054,longitude:longitude-0.0042,unlockSteps:8000 },
+    { id:"park-near-1",name:"近くの公園",habitat:"pond",emoji:"🌳",latitude:latitude+0.0018,longitude:longitude+0.0012,unlockSteps:0,placeType:"park" },
+    { id:"station-near-1",name:"近くの駅",habitat:"river",emoji:"🚉",latitude:latitude-0.0024,longitude:longitude+0.0018,unlockSteps:1000,placeType:"station" },
+    { id:"restaurant-near-1",name:"近くの飲食店",habitat:"lake",emoji:"🍽️",latitude:latitude+0.0028,longitude:longitude-0.0021,unlockSteps:2000,placeType:"restaurant" },
+    { id:"park-near-2",name:"散歩先の公園",habitat:"lake",emoji:"🌳",latitude:latitude-0.0034,longitude:longitude-0.0024,unlockSteps:3500,placeType:"park" },
+    { id:"station-near-2",name:"散歩先の駅",habitat:"sea",emoji:"🚉",latitude:latitude+0.0041,longitude:longitude+0.0031,unlockSteps:5000,placeType:"station" },
+    { id:"restaurant-near-2",name:"散歩先の飲食店",habitat:"sea",emoji:"🍽️",latitude:latitude-0.0048,longitude:longitude+0.0035,unlockSteps:8000,placeType:"restaurant" },
   ];
 }

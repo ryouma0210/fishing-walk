@@ -34,6 +34,12 @@ const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
 };
 
 function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
+  if (effect === "outfit") {
+    const stage = [1, 2, 3, 4].find((level) =>
+      ["hat", "top", "bottom", "shoes"].every((kind) => items.some((item) => item.id === `${kind}${level}`)),
+    );
+    return stage ? stage * 4 : 0;
+  }
   return items.filter((item) => item.effect === effect).reduce((sum, item) => sum + item.power, 0);
 }
 

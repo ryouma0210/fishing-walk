@@ -26,9 +26,13 @@ async function prepare() {
 }
 
 export async function requestHealthAccess() {
-  if (!(await prepare())) return false;
-  const granted = await requestPermission([STEP_PERMISSION]);
-  return granted.some((item) => item.accessType === "read" && item.recordType === "Steps");
+  try {
+    if (!(await prepare())) return false;
+    const granted = await requestPermission([STEP_PERMISSION]);
+    return granted.some((item) => item.accessType === "read" && item.recordType === "Steps");
+  } catch {
+    return false;
+  }
 }
 
 export async function syncHealthMonth(year: number, month: number): Promise<HealthSyncResult> {

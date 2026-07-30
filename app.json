@@ -17,7 +17,7 @@
         }
       ],
       "expo-font",
-      "react-native-health-connect",
+      "expo-health-connect",
       [
         "@kingstinct/react-native-healthkit",
         {
