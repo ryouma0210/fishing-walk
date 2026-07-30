@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
+import { useAudioPlayer } from "expo-audio";
+import * as Haptics from "expo-haptics";
 import { Button } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
 import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
 import { colors, rankColors } from "../../src/constants/theme";
 import {
-  consumeSelectedBait, getEquippedItems, getSelectedBait, getTodayCatchCount, saveCatch,
+  consumeSelectedBait, getBaitInventory, getEquippedItems, getSelectedBait, getTodayCatchCount,
+  saveCatch, selectBait,
 } from "../../src/database/db";
 import { getSelectedSpot } from "../../src/services/locationService";
 import { syncTodaySteps } from "../../src/services/stepService";
+import { AppSettings, DEFAULT_SETTINGS, getSettings } from "../../src/services/settingsService";
 
 type Phase = "idle" | "casting" | "approach" | "bite" | "battle" | "result" | "escaped";
 type CatchResult = {
@@ -20,6 +24,8 @@ type CatchResult = {
   size: number;
   isPersonalBest: boolean;
   aquarium: string;
+  bigCatch: boolean;
+  closeCall: boolean;
 };
 type BattleConfig = { zone: number; seconds: number; pull: number };
 
@@ -51,6 +57,34 @@ function baitRank(steps: number, bait: ShopItem) {
   return Math.random() < highChance ? ranks[ranks.length - 1] : ranks[0];
 }
 
+function WeatherEffects({ speed }: { speed: number }) {
+  const [wave] = useState(() => new Animated.Value(0));
+  const [rain] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    const waves = Animated.loop(Animated.sequence([
+      Animated.timing(wave, { toValue: 1, duration: 2400 / speed, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(wave, { toValue: 0, duration: 2400 / speed, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ]));
+    const rainfall = Animated.loop(Animated.sequence([
+      Animated.timing(rain, { toValue: 1, duration: 1100 / speed, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(rain, { toValue: 0, duration: 1, useNativeDriver: true }),
+    ]));
+    waves.start();
+    rainfall.start();
+    return () => { waves.stop(); rainfall.stop(); };
+  }, [rain, speed, wave]);
+  const waveX = wave.interpolate({ inputRange: [0, 1], outputRange: [-22, 22] });
+  const rainY = rain.interpolate({ inputRange: [0, 1], outputRange: [-120, 520] });
+  return (
+    <View pointerEvents="none" style={styles.weatherLayer}>
+      <Animated.View style={[styles.waveBand, { transform: [{ translateX: waveX }] }]} />
+      <Animated.View style={[styles.rainLayer, { transform: [{ translateY: rainY }] }]}>
+        {Array.from({ length: 18 }, (_, index) => <View key={index} style={[styles.rainDrop, { left: `${(index * 17) % 100}%`, top: (index % 5) * 72 }]} />)}
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function FishScreen() {
   const router = useRouter();
   const { height } = useWindowDimensions();
@@ -66,12 +100,39 @@ export default function FishScreen() {
   const [cursor, setCursor] = useState(50);
   const [targetCenter, setTargetCenter] = useState(50);
   const [battleProgress, setBattleProgress] = useState(0);
+  const [escapeReason, setEscapeReason] = useState("魚に逃げられました");
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [baitStock, setBaitStock] = useState<Record<string, number>>({});
+  const [showBaitPicker, setShowBaitPicker] = useState(false);
+  const reelSound = useAudioPlayer(require("../../assets/audio/reel.wav"));
+  const tensionSound = useAudioPlayer(require("../../assets/audio/tension.wav"));
+  const splashSound = useAudioPlayer(require("../../assets/audio/splash.wav"));
+  const catchSound = useAudioPlayer(require("../../assets/audio/catch.wav"));
+  const escapeSound = useAudioPlayer(require("../../assets/audio/escape.wav"));
   const holdingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorRef = useRef(50);
   const progressRef = useRef(0);
   const targetRef = useRef(50);
   const finishingRef = useRef(false);
+  const tensionAtRef = useRef(0);
+  const reelAudioAtRef = useRef(0);
+
+  const playSound = useCallback((player: typeof reelSound) => {
+    if (settings.soundVolume <= 0) return;
+    player.volume = settings.soundVolume;
+    void player.seekTo(0).then(() => player.play());
+  }, [settings.soundVolume]);
+
+  const vibrate = useCallback((kind: "tap" | "warning" | "success" | "error") => {
+    if (!settings.vibration) return;
+    if (kind === "tap") void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    else void Haptics.notificationAsync(
+      kind === "success" ? Haptics.NotificationFeedbackType.Success
+        : kind === "error" ? Haptics.NotificationFeedbackType.Error
+          : Haptics.NotificationFeedbackType.Warning,
+    );
+  }, [settings.vibration]);
 
   const clearTimer = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -79,18 +140,22 @@ export default function FishScreen() {
   };
 
   const load = useCallback(async () => {
-    const [equipped, selectedSpot, todaySteps, selectedBait, catches] = await Promise.all([
+    const [equipped, selectedSpot, todaySteps, selectedBait, catches, savedSettings, baits] = await Promise.all([
       getEquippedItems(),
       getSelectedSpot(),
       syncTodaySteps(),
       getSelectedBait(),
       getTodayCatchCount(new Date().toISOString().slice(0, 10)),
+      getSettings(),
+      getBaitInventory(),
     ]);
     setGear(equipped);
     setSpot(selectedSpot);
     setSteps(todaySteps.steps);
     setBait(SHOP.find((item) => item.id === selectedBait?.item_id) ?? null);
     setTodayCatch(catches);
+    setSettings(savedSettings);
+    setBaitStock(Object.fromEntries(baits.map((item) => [item.item_id, item.quantity])));
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -123,6 +188,7 @@ export default function FishScreen() {
     setCandidate(null);
     setShadowScale(0);
     setPhase("casting");
+    vibrate("tap");
     timeoutRef.current = setTimeout(() => {
       setPhase("approach");
       const fish = chooseFish(usedBait);
@@ -134,10 +200,16 @@ export default function FishScreen() {
         if (step >= 10) {
           clearInterval(approach);
           setPhase("bite");
-          timeoutRef.current = setTimeout(() => setPhase("escaped"), 2300);
+          playSound(splashSound);
+          vibrate("warning");
+          timeoutRef.current = setTimeout(() => {
+            setEscapeReason("合わせるのが遅く、魚が逃げました");
+            playSound(escapeSound);
+            setPhase("escaped");
+          }, 2300 / settings.animationSpeed);
         }
       }, 130);
-    }, 700);
+    }, 700 / settings.animationSpeed);
   };
 
   const startBattle = () => {
@@ -151,6 +223,7 @@ export default function FishScreen() {
     setTargetCenter(50);
     setBattleProgress(0);
     setPhase("battle");
+    vibrate("tap");
   };
 
   const finishCatch = useCallback(async () => {
@@ -160,6 +233,8 @@ export default function FishScreen() {
     const sizePower = effectPower(gear, "outfit");
     const sizeRoll = Math.min(1, Math.pow(Math.random(), 1 / (1 + sizePower * 0.22)));
     const size = Number((candidate.minCm + (candidate.maxCm - candidate.minCm) * sizeRoll).toFixed(1));
+    const sizeRatio = (size - candidate.minCm) / Math.max(1, candidate.maxCm - candidate.minCm);
+    const closeCall = progressRef.current >= 96 && Math.abs(cursorRef.current - targetRef.current) > BATTLE_CONFIG[candidate.rank].zone * 0.38;
     const isPersonalBest = await saveCatch({
       fishId: candidate.id,
       size,
@@ -170,12 +245,14 @@ export default function FishScreen() {
       habitat: spot.habitat,
       steps,
     });
-    setLast({ ...candidate, size, isPersonalBest });
+    setLast({ ...candidate, size, isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall });
     setTodayCatch((value) => value + 1);
     setPhase("result");
+    playSound(catchSound);
+    vibrate("success");
     load();
     void rankIndex;
-  }, [candidate, gear, load, spot, steps]);
+  }, [candidate, catchSound, gear, load, playSound, spot, steps, vibrate]);
 
   useEffect(() => {
     if (phase !== "battle" || !candidate) return;
@@ -188,12 +265,21 @@ export default function FishScreen() {
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
       const target = 50 + Math.sin(elapsed / (760 - RANK_INDEX[candidate.rank] * 45)) * (9 + RANK_INDEX[candidate.rank] * 1.7);
+      const personality = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0) % 4;
+      const burst = personality === 0 ? Math.sin(elapsed / 93) * (elapsed % 2400 < 430 ? 2.2 : 0)
+        : personality === 1 ? Math.cos(elapsed / 150) * 0.75
+          : personality === 2 ? (elapsed % 3100 < 260 ? 2.8 : -0.25)
+            : Math.sin(elapsed / 420) * 0.5;
       targetRef.current = target;
       const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03);
       const fishPull = Math.sin(elapsed / (240 - RANK_INDEX[candidate.rank] * 12)) * adjustedPull
         + (Math.random() - 0.5) * adjustedPull;
       const reel = holdingRef.current ? 1.25 + reelPower * 0.035 : -0.9;
-      const nextCursor = Math.max(0, Math.min(100, cursorRef.current + reel + fishPull));
+      if (holdingRef.current && Date.now() - reelAudioAtRef.current > 320) {
+        reelAudioAtRef.current = Date.now();
+        playSound(reelSound);
+      }
+      const nextCursor = Math.max(0, Math.min(100, cursorRef.current + reel + fishPull + burst));
       cursorRef.current = nextCursor;
       const inside = Math.abs(nextCursor - target) <= effectiveZone / 2;
       const gain = 50 / (effectiveSeconds * 1000) * 100;
@@ -201,16 +287,24 @@ export default function FishScreen() {
       setCursor(nextCursor);
       setTargetCenter(target);
       setBattleProgress(progressRef.current);
+      if ((nextCursor < 9 || nextCursor > 91) && Date.now() - tensionAtRef.current > 900) {
+        tensionAtRef.current = Date.now();
+        playSound(tensionSound);
+        vibrate("warning");
+      }
       if (progressRef.current >= 100) {
         clearInterval(interval);
         finishCatch();
       } else if ((nextCursor <= 0 || nextCursor >= 100) && elapsed > 1800) {
         clearInterval(interval);
+        setEscapeReason(nextCursor <= 0 ? "糸が緩み、魚に逃げられました" : "テンションが上がりすぎて糸が切れました");
+        playSound(escapeSound);
+        vibrate("error");
         setPhase("escaped");
       }
     }, 50);
     return () => clearInterval(interval);
-  }, [candidate, finishCatch, gear, phase]);
+  }, [candidate, escapeSound, finishCatch, gear, phase, playSound, reelSound, tensionSound, vibrate]);
 
   const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
   const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3);
@@ -219,17 +313,35 @@ export default function FishScreen() {
   const equippedCooler = gear.find((item) => item.kind === "cooler");
   const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
 
-  const exitFishing = () => router.replace("/(tabs)/map");
+  const exitFishing = () => {
+    holdingRef.current = false;
+    clearTimer();
+    setShowBaitPicker(false);
+    setPhase("idle");
+    router.navigate("/(tabs)/map");
+  };
+
+  const changeBait = async (itemId: string) => {
+    await selectBait(itemId);
+    await load();
+    setShowBaitPicker(false);
+  };
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.scene}>
         <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={Math.max(520, height)} />
         <View style={styles.sceneShade} />
+        <WeatherEffects speed={settings.animationSpeed} />
         <View style={styles.topHud}>
           <Text style={styles.hudTitle}>{spot?.emoji ?? "🌿"} {spot?.name ?? "釣り場"}</Text>
           <Text style={styles.hudText}>{HABITAT_NAMES[spot?.habitat ?? "pond"]} ・ 本日 {todayCatch}/{dailyCapacity}匹</Text>
           <Text style={styles.hudText}>{bait ? `${bait.name}／${bait.targetRanks?.join("・")}狙い` : "餌がありません"}</Text>
+          {!["casting", "approach", "bite", "battle"].includes(phase) && (
+            <Pressable onPress={() => setShowBaitPicker(true)} style={styles.baitChangeButton}>
+              <Text style={styles.baitChangeText}>餌を変更</Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.waterOverlay}>
@@ -259,7 +371,7 @@ export default function FishScreen() {
               <Button title="今だ！ 合わせる" onPress={startBattle} />
             </>}
             {phase === "escaped" && <>
-              <Text style={styles.escape}>魚に逃げられました</Text>
+              <Text style={styles.escape}>{escapeReason}</Text>
               <View style={styles.choiceActions}>
                 <View style={styles.choiceAction}><Button title="終了する" kind="secondary" onPress={exitFishing} /></View>
                 <View style={styles.choiceAction}><Button title="もう一度投げる" onPress={cast} /></View>
@@ -278,8 +390,13 @@ export default function FishScreen() {
               <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%` }]} /></View>
               <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
               <Pressable
-                onPressIn={() => { holdingRef.current = true; }}
-                onPressOut={() => { holdingRef.current = false; }}
+                onPressIn={() => {
+                  holdingRef.current = true;
+                  vibrate("tap");
+                }}
+                onPressOut={() => {
+                  holdingRef.current = false;
+                }}
                 style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
               >
                 <Text style={styles.reelText}>長押しでリールを巻く</Text>
@@ -291,6 +408,8 @@ export default function FishScreen() {
         {phase === "result" && last && (
           <View style={styles.resultPanel}>
             <Text style={styles.caught}>CATCH!</Text>
+            {last.bigCatch && <Text style={styles.bigCatch}>✨ BIG CATCH! ✨</Text>}
+            {last.closeCall && <Text style={styles.closeCall}>ギリギリの勝利！</Text>}
             {last.isPersonalBest && <Text style={styles.best}>🏆 NEW PERSONAL BEST</Text>}
             <FishArt fishId={last.id} size={130} />
             <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
@@ -303,6 +422,37 @@ export default function FishScreen() {
             </View>
           </View>
         )}
+        <Modal visible={showBaitPicker} transparent animationType="fade" onRequestClose={() => setShowBaitPicker(false)}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowBaitPicker(false)}>
+            <Pressable style={styles.baitModal} onPress={() => undefined}>
+              <Text style={styles.baitModalTitle}>使用する餌を選択</Text>
+              <Text style={styles.baitModalHelp}>餌によって狙える魚のランクが変わります</Text>
+              {SHOP.filter((item) => item.kind === "bait").map((item) => {
+                const quantity = baitStock[item.id] ?? 0;
+                const selected = bait?.id === item.id;
+                return (
+                  <Pressable
+                    key={item.id}
+                    disabled={quantity <= 0}
+                    onPress={() => changeBait(item.id)}
+                    style={[styles.baitOption, selected && styles.selectedBaitOption, quantity <= 0 && styles.emptyBaitOption]}
+                  >
+                    <Text style={styles.baitOptionEmoji}>{item.emoji}</Text>
+                    <View style={styles.baitOptionInfo}>
+                      <Text style={styles.baitOptionName}>{item.name}</Text>
+                      <Text style={styles.baitOptionRanks}>{item.targetRanks?.join("・")}ランク狙い</Text>
+                    </View>
+                    <View style={styles.baitOptionRight}>
+                      <Text style={styles.baitQuantity}>残り {quantity}個</Text>
+                      <Text style={selected ? styles.baitSelected : styles.baitSelect}>{selected ? "選択中" : quantity > 0 ? "使う" : "在庫なし"}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+              <Button title="閉じる" kind="secondary" onPress={() => setShowBaitPicker(false)} />
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -312,9 +462,15 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.navy },
   scene: { flex: 1, position: "relative", overflow: "hidden" },
   sceneShade: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(2,31,43,.12)" },
+  weatherLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden" },
+  waveBand: { position: "absolute", top: "35%", left: -35, right: -35, height: 24, borderTopWidth: 3, borderBottomWidth: 1, borderColor: "rgba(255,255,255,.36)", borderRadius: 50, backgroundColor: "rgba(33,182,168,.13)" },
+  rainLayer: { position: "absolute", top: -520, right: 0, left: 0, height: 620 },
+  rainDrop: { position: "absolute", width: 1.5, height: 24, borderRadius: 2, backgroundColor: "rgba(220,247,255,.38)", transform: [{ rotate: "12deg" }] },
   topHud: { position: "absolute", top: 12, left: 12, right: 12, backgroundColor: "rgba(6,59,76,.88)", borderRadius: 17, padding: 12 },
   hudTitle: { color: colors.white, fontSize: 19, fontWeight: "900" },
   hudText: { color: "#D7F5F2", fontSize: 11, fontWeight: "700", marginTop: 2 },
+  baitChangeButton: { position: "absolute", right: 10, bottom: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, backgroundColor: colors.coral },
+  baitChangeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
   waterOverlay: { position: "absolute", top: "18%", left: 20, right: 20, height: "42%", alignItems: "center", justifyContent: "center" },
   shadow: { width: 82, height: 28, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: "52%" },
   float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
@@ -346,7 +502,24 @@ const styles = StyleSheet.create({
   resultAction: { flex: 1 },
   caught: { color: colors.coral, fontSize: 28, fontWeight: "900" },
   best: { color: colors.gold, fontWeight: "900" },
+  bigCatch: { color: "#C88900", fontSize: 18, fontWeight: "900", textShadowColor: "#FFF0A8", textShadowRadius: 8 },
+  closeCall: { color: colors.coral, fontSize: 13, fontWeight: "900" },
   rank: { fontWeight: "900", fontSize: 14 },
   name: { fontSize: 27, fontWeight: "900", color: colors.ink },
   size: { fontSize: 20, fontWeight: "900", color: colors.ocean },
+  modalBackdrop: { flex: 1, justifyContent: "center", padding: 18, backgroundColor: "rgba(1,19,28,.78)" },
+  baitModal: { borderRadius: 23, padding: 16, gap: 9, backgroundColor: colors.white },
+  baitModalTitle: { color: colors.navy, fontSize: 21, fontWeight: "900", textAlign: "center" },
+  baitModalHelp: { color: colors.muted, fontSize: 11, textAlign: "center", marginBottom: 3 },
+  baitOption: { flexDirection: "row", alignItems: "center", gap: 10, padding: 11, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.foam },
+  selectedBaitOption: { borderWidth: 2, borderColor: colors.coral, backgroundColor: "#FFF3EF" },
+  emptyBaitOption: { opacity: 0.42 },
+  baitOptionEmoji: { fontSize: 28 },
+  baitOptionInfo: { flex: 1 },
+  baitOptionName: { color: colors.ink, fontSize: 14, fontWeight: "900" },
+  baitOptionRanks: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  baitOptionRight: { alignItems: "flex-end", gap: 3 },
+  baitQuantity: { color: colors.ink, fontSize: 11, fontWeight: "800" },
+  baitSelected: { color: colors.coral, fontSize: 10, fontWeight: "900" },
+  baitSelect: { color: colors.ocean, fontSize: 10, fontWeight: "900" },
 });

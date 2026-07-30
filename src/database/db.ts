@@ -16,6 +16,22 @@ export type InventoryRow = {
   purchased_at: string;
 };
 
+export type CatchHistoryRow = {
+  id: number;
+  fish_id: string;
+  size_cm: number;
+  caught_at: string;
+  spot_name: string | null;
+  habitat: string | null;
+  is_personal_best: number;
+};
+
+export type AquariumPreference = {
+  fish_id: string;
+  favorite: number;
+  visible: number;
+};
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 const STG_TEST_POINTS = process.env.EXPO_PUBLIC_APP_ENV === "stg" ? 9999 : 0;
 
@@ -79,6 +95,11 @@ export async function db() {
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS aquarium_preferences (
+          fish_id TEXT PRIMARY KEY,
+          favorite INTEGER NOT NULL DEFAULT 0,
+          visible INTEGER NOT NULL DEFAULT 1
         );
         INSERT OR IGNORE INTO schema_migrations(version) VALUES(2);
       `);
@@ -162,6 +183,48 @@ export async function getCatchStats() {
     SELECT COUNT(*) count, COUNT(DISTINCT fish_id) unique_count, COALESCE(MAX(size_cm),0) largest FROM catches
   `);
   return totals ?? { count: 0, unique_count: 0, largest: 0 };
+}
+
+export async function getCatchHistory() {
+  return (await db()).getAllAsync<CatchHistoryRow>(`
+    SELECT id,fish_id,size_cm,caught_at,spot_name,habitat,is_personal_best
+    FROM catches ORDER BY caught_at DESC
+  `);
+}
+
+export async function getAquariumPreferences() {
+  return (await db()).getAllAsync<AquariumPreference>(
+    "SELECT fish_id,favorite,visible FROM aquarium_preferences",
+  );
+}
+
+export async function setAquariumFavorite(fishId: string, favorite: boolean) {
+  await (await db()).runAsync(
+    `INSERT INTO aquarium_preferences(fish_id,favorite,visible) VALUES(?,?,1)
+     ON CONFLICT(fish_id) DO UPDATE SET favorite=excluded.favorite`,
+    fishId, favorite ? 1 : 0,
+  );
+}
+
+export async function setAquariumVisible(fishId: string, visible: boolean) {
+  await (await db()).runAsync(
+    `INSERT INTO aquarium_preferences(fish_id,favorite,visible) VALUES(?,0,?)
+     ON CONFLICT(fish_id) DO UPDATE SET visible=excluded.visible`,
+    fishId, visible ? 1 : 0,
+  );
+}
+
+export async function exportDatabaseBytes() {
+  return (await db()).serializeAsync();
+}
+
+export async function restoreDatabaseBytes(bytes: Uint8Array) {
+  const source = await SQLite.deserializeDatabaseAsync(bytes);
+  try {
+    await SQLite.backupDatabaseAsync({ sourceDatabase: source, destDatabase: await db() });
+  } finally {
+    await source.closeAsync();
+  }
 }
 
 export async function buyItem(itemId: string, cost: number) {

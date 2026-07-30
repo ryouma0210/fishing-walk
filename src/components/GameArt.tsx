@@ -11,9 +11,15 @@ const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
 const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
 const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
 const aquariumBackground = require("../../assets/game/aquarium-background.png");
-const anglerOutfits = require("../../assets/game/angler-outfits.png");
+const anglerOutfits = [
+  require("../../assets/game/angler-outfit-casual.png"),
+  require("../../assets/game/angler-outfit-light.png"),
+  require("../../assets/game/angler-outfit-waterproof.png"),
+  require("../../assets/game/angler-outfit-storm.png"),
+  require("../../assets/game/angler-outfit-sea-king.png"),
+];
 const mapAvatars = require("../../assets/game/map-avatars.png");
-const ANGLER_ASPECT_RATIO = (1776 / 4) / 887;
+const ANGLER_ASPECT_RATIO = 2 / 3;
 
 const fishIndexes = Object.fromEntries(FISH.map((fish, index) => [fish.id, index]));
 const gearIndexes = Object.fromEntries(SHOP.map((item, index) => [item.id, index]));
@@ -106,23 +112,21 @@ function ResponsiveCrop({ source, index, columns, height }: {
   );
 }
 
-export function AquariumHero({ height = 180 }: { height?: number }) {
-  return <ImageBackground source={aquariumBackground} resizeMode="cover" style={[styles.aquarium, { height }]} />;
+export function AquariumHero({ height = 180, rounded = true }: { height?: number; rounded?: boolean }) {
+  return <ImageBackground source={aquariumBackground} resizeMode="cover" style={[styles.aquarium, !rounded && styles.square, { height }]} />;
 }
 
 export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?: number }) {
-  const safeStage = Math.max(0, Math.min(3, stage));
+  const safeStage = Math.max(0, Math.min(4, stage));
   const frameWidth = height * ANGLER_ASPECT_RATIO;
   return (
     <View style={[styles.angler, { height, width: frameWidth }]}>
       <Image
-        source={anglerOutfits}
-        resizeMode="stretch"
+        source={anglerOutfits[safeStage]}
+        resizeMode="contain"
         style={{
-          position: "absolute",
           height,
-          width: frameWidth * 4,
-          left: -safeStage * frameWidth,
+          width: frameWidth,
         }}
       />
     </View>
@@ -153,5 +157,6 @@ const styles = StyleSheet.create({
   locked: { opacity: 0.22 },
   crop: { width: "100%", borderRadius: 16, overflow: "hidden", backgroundColor: "#DDF6F6" },
   aquarium: { width: "100%", borderRadius: 18, overflow: "hidden" },
+  square: { borderRadius: 0 },
   angler: { overflow: "hidden", borderRadius: 15, backgroundColor: "#DDF6F6" },
 });

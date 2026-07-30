@@ -17,6 +17,7 @@ import {
   watchCurrentLocation,
 } from "../../src/services/locationService";
 import { syncTodaySteps } from "../../src/services/stepService";
+import { getSettings } from "../../src/services/settingsService";
 
 export default function MapScreen() {
   const router = useRouter();
@@ -30,11 +31,15 @@ export default function MapScreen() {
   const [status, setStatus] = useState("位置情報を確認中");
 
   const load = useCallback(async () => {
-    const saved = await getMapState();
+    const [saved, settings] = await Promise.all([getMapState(), getSettings()]);
     setLocation(saved.location);
     setSpots(saved.spots);
     setSelected(null);
     setSteps((await syncTodaySteps()).steps);
+    if (!settings.locationUpdates) {
+      setStatus("位置情報の自動更新は設定で停止中です");
+      return;
+    }
     try {
       const result = await requestCurrentLocation();
       if (result.status === "denied") {
@@ -61,6 +66,7 @@ export default function MapScreen() {
     let active = true;
     let subscription: Awaited<ReturnType<typeof watchCurrentLocation>> = null;
     load().then(async () => {
+      if (!(await getSettings()).locationUpdates) return;
       subscription = await watchCurrentLocation((nextLocation) => {
         if (!active) return;
         setLocation(nextLocation);

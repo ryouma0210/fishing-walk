@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { AnglerArt, GearArt } from "../../src/components/GameArt";
 import { DEFAULT_GEAR, GearKind, SHOP } from "../../src/constants/game";
@@ -23,6 +23,7 @@ const APPAREL_DISPLAY_ORDER: GearKind[] = ["top", "hat", "bottom", "shoes"];
 const OUTFIT_NAMES = ["ライトアングラー", "ウォータープルーフ", "ストームフィッシャー", "海王スタイル"];
 
 export default function ShopScreen() {
+  const router = useRouter();
   const [points, setPoints] = useState(0);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [baitStock, setBaitStock] = useState<Record<string, { quantity: number; selected: number }>>({});
@@ -45,7 +46,7 @@ export default function ShopScreen() {
   const equippedOutfit = [1, 2, 3, 4].find((stage) =>
     APPAREL_KINDS.every((kind) => owned.get(`${kind}${stage}`)?.equipped === 1),
   );
-  const outfitStage = Math.max(0, (equippedOutfit ?? 1) - 1);
+  const outfitStage = equippedOutfit ?? 0;
 
   const act = async (id: string) => {
     const item = SHOP.find((entry) => entry.id === id);
@@ -83,7 +84,12 @@ export default function ShopScreen() {
 
   return (
     <Screen>
-      <Header title="Gear Exchange" sub={`歩数ポイント ${points.toLocaleString()}pt（100歩＝1pt）`} />
+      <View style={ui.between}>
+        <Header title="Gear Exchange" sub={`歩数ポイント ${points.toLocaleString()}pt（100歩＝1pt）`} />
+        <Pressable onPress={() => router.push("/settings")} style={styles.settingsButton}>
+          <Text style={styles.settingsButtonText}>⚙ 設定</Text>
+        </Pressable>
+      </View>
       <Card>
         <Text style={ui.h2}>現在の衣装</Text>
         <Pressable onPress={() => setShowAngler(true)} style={styles.anglerPreview}>
@@ -101,7 +107,7 @@ export default function ShopScreen() {
               <View key={stage} style={[styles.outfitSet, active && styles.activeOutfitSet]}>
                 <View style={styles.outfitSetBody}>
                   <View style={styles.outfitThumbnail}>
-                    <AnglerArt stage={stage - 1} height={164} />
+                    <AnglerArt stage={stage} height={164} />
                     {!complete && <View style={styles.previewBadge}><Text style={styles.previewBadgeText}>完成イメージ</Text></View>}
                   </View>
                   <View style={styles.outfitSetInfo}>
@@ -221,6 +227,8 @@ export default function ShopScreen() {
 }
 
 const styles = StyleSheet.create({
+  settingsButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.navy },
+  settingsButtonText: { color: colors.white, fontSize: 12, fontWeight: "900" },
   loadout: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginVertical: 12 },
   slot: { width: "23.3%", backgroundColor: colors.foam, borderRadius: 12, padding: 7, alignItems: "center", borderWidth: 1, borderColor: "transparent" },
   activeSlot: { borderColor: colors.coral },
