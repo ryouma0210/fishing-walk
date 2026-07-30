@@ -17,6 +17,7 @@ export type InventoryRow = {
 };
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+const STG_TEST_POINTS = process.env.EXPO_PUBLIC_APP_ENV === "stg" ? 9999 : 0;
 
 export async function db() {
   if (!dbPromise) {
@@ -113,7 +114,7 @@ export async function getWalkPoints() {
       COALESCE((SELECT SUM(points) FROM point_spends),0)
       + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
   );
-  return Math.max(0, (earned?.points ?? 0) - (spent?.points ?? 0));
+  return Math.max(0, STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0));
 }
 
 export async function saveCatch(input: {
@@ -180,7 +181,7 @@ export async function buyItem(itemId: string, cost: number) {
         COALESCE((SELECT SUM(points) FROM point_spends),0)
         + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
     );
-    if ((earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
+    if (STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
     await database.runAsync(
       "INSERT INTO inventory(item_id,equipped,purchased_at) VALUES(?,0,?)",
       itemId,
@@ -211,7 +212,7 @@ export async function buyBait(itemId: string, unitCost: number, quantity = 1) {
         COALESCE((SELECT SUM(points) FROM point_spends),0)
         + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
     );
-    if ((earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
+    if (STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
     await database.runAsync(
       "INSERT INTO consumable_spends(item_id,points,spent_at) VALUES(?,?,?)",
       itemId, cost, new Date().toISOString(),

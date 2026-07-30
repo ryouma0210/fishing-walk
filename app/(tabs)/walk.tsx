@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { colors } from "../../src/constants/theme";
@@ -66,6 +66,13 @@ export default function WalkScreen() {
   const average = activeDays ? Math.round(total / activeDays) : 0;
   const best = values.reduce((highest, item) => item.steps > highest.steps ? item : highest, { day: 0, steps: 0 });
   const max = Math.max(10000, ...values.map((item) => item.steps));
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const calendarCells = [
+    ...Array.from({ length: firstWeekday }, () => null),
+    ...values,
+  ];
+  while (calendarCells.length % 7 !== 0) calendarCells.push(null);
+  const todayKey = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
   return (
     <Screen>
@@ -107,15 +114,46 @@ export default function WalkScreen() {
           <View style={styles.stat}><Text style={ui.muted}>平均</Text><Text style={styles.statValue}>{average.toLocaleString()}</Text></View>
           <View style={styles.stat}><Text style={ui.muted}>最高</Text><Text style={styles.statValue}>{best.steps.toLocaleString()}</Text></View>
         </View>
-        <View style={styles.chart}>
+        <Text style={styles.sectionLabel}>日別歩数グラフ</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chart}>
           {values.map((item) => (
             <View key={item.day} style={styles.barCell}>
-              <View style={[styles.bar, { height: Math.max(2, 92 * item.steps / max) }]} />
-              {(item.day === 1 || item.day % 5 === 0 || item.day === dayCount) && <Text style={styles.label}>{item.day}</Text>}
+              <Text style={styles.barValue}>{item.steps >= 1000 ? `${(item.steps / 1000).toFixed(1)}k` : item.steps}</Text>
+              <View style={styles.barTrack}>
+                <View style={[styles.bar, { height: Math.max(3, 100 * item.steps / max) }]} />
+              </View>
+              <Text style={styles.label}>{item.day}日</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
         <Text style={ui.muted}>最高記録: {best.day ? `${best.day}日 ${best.steps.toLocaleString()}歩` : "データなし"}</Text>
+      </Card>
+
+      <Card>
+        <Text style={ui.h2}>{year}年 {month}月 カレンダー</Text>
+        <View style={styles.weekHeader}>
+          {["日", "月", "火", "水", "木", "金", "土"].map((label, weekday) => (
+            <Text key={label} style={[styles.weekLabel, weekday === 0 && styles.sunday, weekday === 6 && styles.saturday]}>{label}</Text>
+          ))}
+        </View>
+        <View style={styles.calendar}>
+          {calendarCells.map((item, index) => {
+            const weekday = index % 7;
+            const isToday = item
+              ? `${year}-${month}-${item.day}` === todayKey
+              : false;
+            return (
+              <View key={`${index}-${item?.day ?? "empty"}`} style={[styles.calendarCell, isToday && styles.todayCell]}>
+                {item && (
+                  <>
+                    <Text style={[styles.calendarDay, weekday === 0 && styles.sunday, weekday === 6 && styles.saturday]}>{item.day}</Text>
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={styles.calendarSteps}>{item.steps.toLocaleString()}歩</Text>
+                  </>
+                )}
+              </View>
+            );
+          })}
+        </View>
       </Card>
 
       <Card>
@@ -142,10 +180,22 @@ const styles = StyleSheet.create({
   stats: { flexDirection: "row", gap: 8, marginTop: 14 },
   stat: { flex: 1, alignItems: "center", backgroundColor: colors.foam, padding: 9, borderRadius: 12 },
   statValue: { fontWeight: "900", color: colors.navy, fontSize: 15 },
-  chart: { height: 122, flexDirection: "row", alignItems: "flex-end", gap: 1, marginTop: 14 },
-  barCell: { flex: 1, height: 112, alignItems: "center", justifyContent: "flex-end" },
-  bar: { width: "82%", backgroundColor: colors.aqua, borderRadius: 3 },
-  label: { fontSize: 7, color: colors.muted, height: 12 },
+  sectionLabel: { fontSize: 12, fontWeight: "800", color: colors.navy, marginTop: 16 },
+  chart: { height: 150, flexDirection: "row", alignItems: "flex-end", gap: 5, paddingTop: 8, paddingRight: 8 },
+  barCell: { width: 34, height: 140, alignItems: "center", justifyContent: "flex-end" },
+  barValue: { fontSize: 8, color: colors.muted, height: 14 },
+  barTrack: { width: 22, height: 102, borderRadius: 5, backgroundColor: colors.foam, justifyContent: "flex-end", overflow: "hidden" },
+  bar: { width: "100%", backgroundColor: colors.aqua, borderRadius: 5 },
+  label: { fontSize: 9, color: colors.ink, height: 16, marginTop: 4 },
+  weekHeader: { flexDirection: "row", marginTop: 14, borderBottomWidth: 1, borderBottomColor: colors.line },
+  weekLabel: { width: "14.285%", textAlign: "center", paddingVertical: 7, fontSize: 12, fontWeight: "900", color: colors.ink },
+  calendar: { flexDirection: "row", flexWrap: "wrap" },
+  calendarCell: { width: "14.285%", minHeight: 58, alignItems: "center", paddingTop: 7, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
+  todayCell: { backgroundColor: "#FFF3D4", borderRadius: 8 },
+  calendarDay: { fontSize: 13, fontWeight: "900", color: colors.ink },
+  calendarSteps: { width: "94%", textAlign: "center", marginTop: 6, fontSize: 9, color: colors.muted },
+  sunday: { color: "#D64B4B" },
+  saturday: { color: "#3478C7" },
   milestones: { flexDirection: "row", gap: 6, marginTop: 12 },
   milestone: { flex: 1, paddingVertical: 7, borderRadius: 9, backgroundColor: colors.line, alignItems: "center" },
   reached: { backgroundColor: colors.gold },

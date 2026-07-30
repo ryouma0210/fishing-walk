@@ -2,10 +2,10 @@ import { Image, ImageBackground, StyleSheet, View } from "react-native";
 import { FISH, Habitat, SHOP } from "../constants/game";
 
 const fishSheets: Record<Habitat, number> = {
-  pond: require("../../assets/game/fish-pond-sheet.png"),
-  river: require("../../assets/game/fish-river-sheet.png"),
-  lake: require("../../assets/game/fish-lake-sheet.png"),
-  sea: require("../../assets/game/fish-sea-sheet.png"),
+  pond: require("../../assets/game/fish-pond-transparent.png"),
+  river: require("../../assets/game/fish-river-transparent.png"),
+  lake: require("../../assets/game/fish-lake-transparent.png"),
+  sea: require("../../assets/game/fish-sea-transparent.png"),
 };
 const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
 const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
@@ -13,6 +13,7 @@ const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
 const aquariumBackground = require("../../assets/game/aquarium-background.png");
 const anglerOutfits = require("../../assets/game/angler-outfits.png");
 const mapAvatars = require("../../assets/game/map-avatars.png");
+const ANGLER_ASPECT_RATIO = (1776 / 4) / 887;
 
 const fishIndexes = Object.fromEntries(FISH.map((fish, index) => [fish.id, index]));
 const gearIndexes = Object.fromEntries(SHOP.map((item, index) => [item.id, index]));
@@ -55,7 +56,7 @@ export function FishArt({ fishId, size = 72, locked = false }: {
   const habitatFish = FISH.filter((entry) => entry.habitats[0] === habitat);
   const index = habitatFish.findIndex((entry) => entry.id === fishId);
   return (
-    <View style={[styles.rounded, locked && styles.locked]}>
+    <View style={locked && styles.locked}>
       <GridSprite source={fishSheets[habitat]} index={Math.max(0, index)} columns={4} rows={5} size={size} />
     </View>
   );
@@ -111,16 +112,17 @@ export function AquariumHero({ height = 180 }: { height?: number }) {
 
 export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?: number }) {
   const safeStage = Math.max(0, Math.min(3, stage));
+  const frameWidth = height * ANGLER_ASPECT_RATIO;
   return (
-    <View style={[styles.angler, { height, width: height * 0.72 }]}>
+    <View style={[styles.angler, { height, width: frameWidth }]}>
       <Image
         source={anglerOutfits}
         resizeMode="stretch"
         style={{
           position: "absolute",
           height,
-          width: height * 0.72 * 4,
-          left: -safeStage * height * 0.72,
+          width: frameWidth * 4,
+          left: -safeStage * frameWidth,
         }}
       />
     </View>

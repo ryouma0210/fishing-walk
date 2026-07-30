@@ -19,6 +19,7 @@ const DEFAULT_ICONS: Record<GearKind, string> = {
   hat:"◯", top:"👕", bottom:"👖", shoes:"👟", rod:"🎣", reel:"⚙️", bait:"🪱", cooler:"🧊",
 };
 const APPAREL_KINDS: GearKind[] = ["hat", "top", "bottom", "shoes"];
+const APPAREL_DISPLAY_ORDER: GearKind[] = ["top", "hat", "bottom", "shoes"];
 const OUTFIT_NAMES = ["ライトアングラー", "ウォータープルーフ", "ストームフィッシャー", "海王スタイル"];
 
 export default function ShopScreen() {
@@ -95,10 +96,25 @@ export default function ShopScreen() {
           {[1, 2, 3, 4].map((stage) => {
             const complete = APPAREL_KINDS.every((kind) => owned.has(`${kind}${stage}`));
             const active = equippedOutfit === stage;
+            const missing = APPAREL_DISPLAY_ORDER.filter((kind) => !owned.has(`${kind}${stage}`));
             return (
               <View key={stage} style={[styles.outfitSet, active && styles.activeOutfitSet]}>
-                <Text style={styles.outfitSetName}>{OUTFIT_NAMES[stage - 1]}</Text>
-                <Text style={complete ? styles.complete : styles.incomplete}>{complete ? "4点所持" : "未完成"}</Text>
+                <View style={styles.outfitSetBody}>
+                  <View style={styles.outfitThumbnail}>
+                    <AnglerArt stage={stage - 1} height={164} />
+                    {!complete && <View style={styles.previewBadge}><Text style={styles.previewBadgeText}>完成イメージ</Text></View>}
+                  </View>
+                  <View style={styles.outfitSetInfo}>
+                    <Text style={styles.outfitSetName}>{OUTFIT_NAMES[stage - 1]}</Text>
+                    <Text style={complete ? styles.complete : styles.incomplete}>{complete ? "✓ 4点所持" : "未完成"}</Text>
+                    {missing.length > 0 && (
+                      <View style={styles.missingBox}>
+                        <Text style={styles.missingLabel}>未購入</Text>
+                        <Text style={styles.missingItems}>{missing.map((kind) => KIND_NAMES[kind]).join("、")}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
                 <Button
                   title={active ? "着用中" : "一式に着替える"}
                   disabled={!complete || active}
@@ -145,7 +161,7 @@ export default function ShopScreen() {
               <View style={styles.info}>
                 <View style={ui.between}>
                   <Text style={ui.h2}>{item.name}</Text>
-                  {row && <Text style={styles.owned}>所持</Text>}
+                  <Text style={row ? styles.owned : styles.notOwned}>{row ? "所持済み" : "未購入"}</Text>
                 </View>
                 <Text style={ui.body}>{item.description}</Text>
                 <Text style={styles.cost}>{item.cost.toLocaleString()} pt</Text>
@@ -225,14 +241,23 @@ const styles = StyleSheet.create({
   zoomText: { color: colors.white, fontSize: 11, fontWeight: "900" },
   outfitName: { textAlign: "center", fontSize: 17, fontWeight: "900", color: colors.navy, marginBottom: 6 },
   outfitSets: { gap: 8, marginVertical: 12 },
-  outfitSet: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 10, gap: 5 },
+  outfitSet: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 10, gap: 9, backgroundColor: colors.white },
   activeOutfitSet: { borderColor: colors.coral, backgroundColor: "#FFF6F2" },
+  outfitSetBody: { flexDirection: "row", alignItems: "center", gap: 13 },
+  outfitThumbnail: { width: 104, height: 164, alignItems: "center", overflow: "hidden", borderRadius: 13, backgroundColor: colors.foam },
+  outfitSetInfo: { flex: 1, gap: 5 },
   outfitSetName: { fontWeight: "900", color: colors.ink },
   complete: { color: colors.ocean, fontSize: 12, fontWeight: "800" },
-  incomplete: { color: colors.muted, fontSize: 12, fontWeight: "800" },
+  incomplete: { color: colors.coral, fontSize: 12, fontWeight: "900" },
+  previewBadge: { position: "absolute", left: 5, right: 5, bottom: 5, borderRadius: 99, paddingVertical: 4, backgroundColor: "rgba(6,59,76,.84)", alignItems: "center" },
+  previewBadgeText: { color: colors.white, fontSize: 9, fontWeight: "900" },
+  missingBox: { borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#FFF0EE", borderWidth: 1, borderColor: "#FFD0CB" },
+  missingLabel: { color: colors.coral, fontSize: 10, fontWeight: "900" },
+  missingItems: { color: colors.ink, fontSize: 12, fontWeight: "800", marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(2,23,31,.78)", justifyContent: "center", alignItems: "center", padding: 20 },
   modalCard: { width: "100%", maxWidth: 430, backgroundColor: colors.white, borderRadius: 24, padding: 18, alignItems: "center", gap: 12 },
   stock: { color: colors.ocean, fontWeight: "900", marginTop: 4 },
+  notOwned: { color: colors.white, backgroundColor: colors.coral, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 3, fontSize: 11, fontWeight: "900" },
   baitActions: { flexDirection: "row", gap: 8 },
   baitAction: { flex: 1 },
   baitPurchase: { gap: 9 },
