@@ -14,12 +14,16 @@ function dayKey(date: Date) {
 }
 
 export async function requestHealthAccess() {
-  if (!(await isHealthDataAvailableAsync())) return false;
-  const completed = await requestAuthorization({
-    toRead: ["HKQuantityTypeIdentifierStepCount"],
-  });
-  if (completed) await AsyncStorage.setItem(AUTHORIZED_KEY, "1");
-  return completed;
+  try {
+    if (!(await isHealthDataAvailableAsync())) return false;
+    const completed = await requestAuthorization({
+      toRead: ["HKQuantityTypeIdentifierStepCount"],
+    });
+    if (completed) await AsyncStorage.setItem(AUTHORIZED_KEY, "1");
+    return completed;
+  } catch {
+    return false;
+  }
 }
 
 export async function syncHealthMonth(year: number, month: number): Promise<HealthSyncResult> {

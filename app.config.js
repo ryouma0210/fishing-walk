@@ -20,6 +20,10 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    extra: {
+      ...config.extra,
+      googleRoutesApiKey: googleMapsApiKey,
+    },
     android: {
       ...config.android,
       config: googleMapsApiKey

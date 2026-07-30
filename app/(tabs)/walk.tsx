@@ -37,11 +37,17 @@ export default function WalkScreen() {
 
   const connectHealth = async () => {
     setStatus("歩数の読み取り権限を確認中");
-    const granted = await requestHealthAccess();
-    if (granted) await syncSteps();
-    else {
+    try {
+      const granted = await requestHealthAccess();
+      if (granted) {
+        await syncSteps();
+        return;
+      }
       setAvailable(false);
-      setStatus("端末の設定から歩数の読み取りを許可してください");
+      setStatus("ヘルスケアを利用できないか、歩数の読み取りが許可されませんでした");
+    } catch {
+      setAvailable(false);
+      setStatus("歩数連携を開始できませんでした。アプリを再起動してお試しください");
     }
   };
 
