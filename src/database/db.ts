@@ -197,7 +197,9 @@ export async function buyItem(itemId: string, cost: number) {
   return result;
 }
 
-export async function buyBait(itemId: string, cost: number) {
+export async function buyBait(itemId: string, unitCost: number, quantity = 1) {
+  const safeQuantity = Math.max(1, Math.min(10, Math.floor(quantity)));
+  const cost = unitCost * safeQuantity;
   const database = await db();
   let ok = false;
   await database.withTransactionAsync(async () => {
@@ -215,9 +217,9 @@ export async function buyBait(itemId: string, cost: number) {
       itemId, cost, new Date().toISOString(),
     );
     await database.runAsync(
-      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,1,0)
-       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+1`,
-      itemId,
+      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,?,0)
+       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+excluded.quantity`,
+      itemId, safeQuantity,
     );
     const selected = await database.getFirstAsync("SELECT 1 FROM bait_inventory WHERE selected=1 AND quantity>0");
     if (!selected) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", itemId);

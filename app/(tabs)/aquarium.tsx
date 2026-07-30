@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Card, Header, Screen, ui } from "../../src/components/ui";
 import { AquariumHero, FishArt } from "../../src/components/GameArt";
@@ -9,11 +9,42 @@ import { colors, rankColors } from "../../src/constants/theme";
 
 type Filter = "すべて" | string;
 
+function SwimmingFish({ fishId, index, width }: { fishId: string; index: number; width: number }) {
+  const [travel] = useState(() => new Animated.Value(-76));
+  const [bob] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    const swim = Animated.loop(Animated.sequence([
+      Animated.timing(travel, { toValue: Math.max(20, width - 70), duration: 9000 + index * 1300, easing: Easing.inOut(Easing.linear), useNativeDriver: true }),
+      Animated.timing(travel, { toValue: -76, duration: 9000 + index * 1300, easing: Easing.inOut(Easing.linear), useNativeDriver: true }),
+    ]));
+    const floating = Animated.loop(Animated.sequence([
+      Animated.timing(bob, { toValue: 8, duration: 1100 + index * 90, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(bob, { toValue: -8, duration: 1100 + index * 90, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+    ]));
+    swim.start();
+    floating.start();
+    return () => {
+      swim.stop();
+      floating.stop();
+    };
+  }, [bob, index, travel, width]);
+  return (
+    <Animated.View style={[styles.swimmer, {
+      top: 12 + (index % 4) * 43,
+      transform: [{ translateX: travel }, { translateY: bob }],
+      opacity: 0.72 + (index % 3) * 0.1,
+    }]}>
+      <FishArt fishId={fishId} size={58 - (index % 3) * 5} />
+    </Animated.View>
+  );
+}
+
 export default function Aquarium() {
   const [rows, setRows] = useState<CatchSummary[]>([]);
   const [stats, setStats] = useState({ count: 0, unique_count: 0, largest: 0 });
   const [filter, setFilter] = useState<Filter>("すべて");
   const [showLocked, setShowLocked] = useState(true);
+  const { width } = useWindowDimensions();
 
   useFocusEffect(useCallback(() => {
     Promise.all([getCatchSummaries(), getCatchStats()]).then(([summaries, totals]) => {
@@ -24,11 +55,19 @@ export default function Aquarium() {
 
   const aquariums = useMemo(() => [...new Set(FISH.map((fish) => fish.aquarium))], []);
   const visibleAquariums = filter === "すべて" ? aquariums : [filter];
+  const swimmers = (filter === "すべて" ? rows : rows.filter((row) => row.aquarium === filter)).slice(0, 8);
 
   return (
     <Screen>
       <Header title="My Aquarium" sub={`図鑑 ${rows.length} / ${FISH.length} 種`} />
-      <AquariumHero />
+      <View style={styles.liveTank}>
+        <AquariumHero height={210} />
+        <View pointerEvents="none" style={styles.swimLayer}>
+          {swimmers.map((row, index) => <SwimmingFish key={row.fish_id} fishId={row.fish_id} index={index} width={width - 32} />)}
+          {!swimmers.length && <Text style={styles.emptyTank}>魚を釣ると、この水槽で泳ぎ始めます</Text>}
+        </View>
+        <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>LIVE AQUARIUM</Text></View>
+      </View>
       <Card>
         <View style={styles.stats}>
           <View style={styles.stat}><Text style={ui.muted}>総釣果</Text><Text style={styles.statValue}>{stats.count}</Text></View>
@@ -94,6 +133,12 @@ export default function Aquarium() {
 }
 
 const styles = StyleSheet.create({
+  liveTank: { height: 210, borderRadius: 18, overflow: "hidden", position: "relative" },
+  swimLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, overflow: "hidden" },
+  swimmer: { position: "absolute", left: 0 },
+  emptyTank: { color: colors.white, fontWeight: "900", textAlign: "center", marginTop: 88, textShadowColor: colors.navy, textShadowRadius: 5 },
+  liveBadge: { position: "absolute", top: 10, left: 10, backgroundColor: "rgba(6,59,76,.8)", borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5 },
+  liveBadgeText: { color: colors.white, fontSize: 9, fontWeight: "900" },
   stats: { flexDirection: "row", gap: 8 },
   stat: { flex: 1, alignItems: "center", backgroundColor: colors.foam, padding: 9, borderRadius: 12 },
   statValue: { fontSize: 18, fontWeight: "900", color: colors.navy },

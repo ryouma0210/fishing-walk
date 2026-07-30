@@ -27,6 +27,7 @@ export default function ShopScreen() {
   const [baitStock, setBaitStock] = useState<Record<string, { quantity: number; selected: number }>>({});
   const [filter, setFilter] = useState<GearKind>("rod");
   const [showAngler, setShowAngler] = useState(false);
+  const [baitQuantity, setBaitQuantity] = useState(1);
   const { width } = useWindowDimensions();
 
   const load = useCallback(async () => {
@@ -50,8 +51,10 @@ export default function ShopScreen() {
     if (!item) return;
     const isApparel = APPAREL_KINDS.includes(item.kind);
     if (item.consumable) {
-      const ok = await buyBait(item.id, item.cost);
-      if (!ok) Alert.alert("歩数ポイントが不足しています", `あと${Math.max(0, item.cost - points)}pt必要です。`);
+      const totalCost = item.cost * baitQuantity;
+      const ok = await buyBait(item.id, item.cost, baitQuantity);
+      if (!ok) Alert.alert("歩数ポイントが不足しています", `あと${Math.max(0, totalCost - points)}pt必要です。`);
+      else Alert.alert("餌を購入しました", `${item.name}を${baitQuantity}個購入しました。`);
       await load();
       return;
     }
@@ -150,8 +153,21 @@ export default function ShopScreen() {
               </View>
             </View>
             {item.consumable ? (
-              <View style={styles.baitActions}>
-                <View style={styles.baitAction}><Button title="1個購入" onPress={() => act(item.id)} /></View>
+              <View style={styles.baitPurchase}>
+                <View style={styles.quantityRow}>
+                  <Pressable disabled={baitQuantity <= 1} onPress={() => setBaitQuantity((value) => Math.max(1, value - 1))} style={[styles.quantityButton, baitQuantity <= 1 && styles.quantityDisabled]}>
+                    <Text style={styles.quantityButtonText}>−</Text>
+                  </Pressable>
+                  <View style={styles.quantityValue}>
+                    <Text style={styles.quantityNumber}>{baitQuantity}</Text>
+                    <Text style={styles.quantityUnit}>個（最大10個）</Text>
+                  </View>
+                  <Pressable disabled={baitQuantity >= 10} onPress={() => setBaitQuantity((value) => Math.min(10, value + 1))} style={[styles.quantityButton, baitQuantity >= 10 && styles.quantityDisabled]}>
+                    <Text style={styles.quantityButtonText}>＋</Text>
+                  </Pressable>
+                </View>
+                <Button title={`${baitQuantity}個購入・合計 ${(item.cost * baitQuantity).toLocaleString()}pt`} onPress={() => act(item.id)} />
+                <View style={styles.baitActions}>
                 {(bait?.quantity ?? 0) > 0 && (
                   <View style={styles.baitAction}>
                     <Button
@@ -162,6 +178,7 @@ export default function ShopScreen() {
                     />
                   </View>
                 )}
+                </View>
               </View>
             ) : (
               <Button
@@ -218,4 +235,12 @@ const styles = StyleSheet.create({
   stock: { color: colors.ocean, fontWeight: "900", marginTop: 4 },
   baitActions: { flexDirection: "row", gap: 8 },
   baitAction: { flex: 1 },
+  baitPurchase: { gap: 9 },
+  quantityRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14 },
+  quantityButton: { width: 44, height: 40, borderRadius: 13, backgroundColor: colors.foam, borderWidth: 1, borderColor: colors.aqua, alignItems: "center", justifyContent: "center" },
+  quantityDisabled: { opacity: .35 },
+  quantityButtonText: { fontSize: 23, fontWeight: "900", color: colors.navy },
+  quantityValue: { minWidth: 105, alignItems: "center" },
+  quantityNumber: { fontSize: 22, fontWeight: "900", color: colors.navy },
+  quantityUnit: { fontSize: 10, color: colors.muted },
 });
