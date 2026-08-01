@@ -6,13 +6,14 @@ import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { Button } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
-import { FISH, FishingSpot, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
+import { FISH, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
+import { FishingArea } from "../../src/constants/areas";
 import { colors, rankColors } from "../../src/constants/theme";
 import {
   consumeSelectedBait, getBaitInventory, getEquippedItems, getSelectedBait, getTodayCatchCount,
   saveCatch, selectBait,
 } from "../../src/database/db";
-import { getSelectedSpot } from "../../src/services/locationService";
+import { getSelectedArea } from "../../src/services/areaService";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { AppSettings, DEFAULT_SETTINGS, getSettings } from "../../src/services/settingsService";
 
@@ -89,7 +90,7 @@ export default function FishScreen() {
   const router = useRouter();
   const { height } = useWindowDimensions();
   const [steps, setSteps] = useState(0);
-  const [spot, setSpot] = useState<FishingSpot | null>(null);
+  const [spot, setSpot] = useState<FishingArea | null>(null);
   const [gear, setGear] = useState<ShopItem[]>([]);
   const [bait, setBait] = useState<ShopItem | null>(null);
   const [todayCatch, setTodayCatch] = useState(0);
@@ -97,6 +98,7 @@ export default function FishScreen() {
   const [candidate, setCandidate] = useState<(typeof FISH)[number] | null>(null);
   const [last, setLast] = useState<CatchResult | null>(null);
   const [shadowScale, setShadowScale] = useState(0);
+  const [approachProgress, setApproachProgress] = useState(0);
   const [cursor, setCursor] = useState(50);
   const [targetCenter, setTargetCenter] = useState(50);
   const [battleProgress, setBattleProgress] = useState(0);
@@ -140,9 +142,9 @@ export default function FishScreen() {
   };
 
   const load = useCallback(async () => {
-    const [equipped, selectedSpot, todaySteps, selectedBait, catches, savedSettings, baits] = await Promise.all([
+    const [equipped, selectedArea, todaySteps, selectedBait, catches, savedSettings, baits] = await Promise.all([
       getEquippedItems(),
-      getSelectedSpot(),
+      getSelectedArea(),
       syncTodaySteps(),
       getSelectedBait(),
       getTodayCatchCount(new Date().toISOString().slice(0, 10)),
@@ -150,7 +152,7 @@ export default function FishScreen() {
       getBaitInventory(),
     ]);
     setGear(equipped);
-    setSpot(selectedSpot);
+    setSpot(selectedArea);
     setSteps(todaySteps.steps);
     setBait(SHOP.find((item) => item.id === selectedBait?.item_id) ?? null);
     setTodayCatch(catches);
@@ -187,6 +189,7 @@ export default function FishScreen() {
     setLast(null);
     setCandidate(null);
     setShadowScale(0);
+    setApproachProgress(0);
     setPhase("casting");
     vibrate("tap");
     timeoutRef.current = setTimeout(() => {
@@ -194,11 +197,16 @@ export default function FishScreen() {
       const fish = chooseFish(usedBait);
       setCandidate(fish);
       let step = 0;
+      const approachSteps = 25;
+      const approachTick = Math.max(120, 5200 / settings.animationSpeed / approachSteps);
       const approach = setInterval(() => {
         step += 1;
-        setShadowScale(step / 10);
-        if (step >= 10) {
+        const progress = Math.min(100, step / approachSteps * 100);
+        setApproachProgress(progress);
+        setShadowScale(progress / 100);
+        if (step >= approachSteps) {
           clearInterval(approach);
+          setApproachProgress(100);
           setPhase("bite");
           playSound(splashSound);
           vibrate("warning");
@@ -208,7 +216,7 @@ export default function FishScreen() {
             setPhase("escaped");
           }, 2300 / settings.animationSpeed);
         }
-      }, 130);
+      }, approachTick);
     }, 700 / settings.animationSpeed);
   };
 
@@ -345,6 +353,20 @@ export default function FishScreen() {
         </View>
 
         <View style={styles.waterOverlay}>
+          {(phase === "casting" || phase === "approach" || phase === "bite") && (
+            <View style={styles.approachPanel}>
+              <View style={styles.approachHeader}>
+                <Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入中" : phase === "bite" ? "魚が食いついた！" : "魚が近づいています"}</Text>
+                <Text style={styles.approachPercent}>{Math.round(approachProgress)}%</Text>
+              </View>
+              <View style={styles.approachGauge}>
+                <View style={styles.approachGreen} /><View style={styles.approachYellow} /><View style={styles.approachRed} />
+                <View style={[styles.approachFish, { left: `${Math.max(2, Math.min(94, approachProgress))}%` }]}><Text style={styles.approachFishIcon}>🐟</Text></View>
+                <View style={styles.approachHook}><Text style={styles.approachHookIcon}>🪝</Text></View>
+              </View>
+              <Text style={styles.approachMessage}>{approachProgress < 35 ? "魚影がこちらへ向かっています" : approachProgress < 75 ? "ウキの近くまで来ました" : approachProgress < 100 ? "もうすぐ食いつきます！" : "今すぐ合わせてください！"}</Text>
+            </View>
+          )}
           {(phase === "approach" || phase === "bite") && (
             <View style={[styles.shadow, { transform: [{ scale: 0.45 + shadowScale * 0.7 }] }]} />
           )}
@@ -472,6 +494,19 @@ const styles = StyleSheet.create({
   baitChangeButton: { position: "absolute", right: 10, bottom: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, backgroundColor: colors.coral },
   baitChangeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
   waterOverlay: { position: "absolute", top: "18%", left: 20, right: 20, height: "42%", alignItems: "center", justifyContent: "center" },
+  approachPanel: { position: "absolute", top: 0, left: 0, right: 0, borderRadius: 16, padding: 10, backgroundColor: "rgba(255,255,255,.94)", borderWidth: 2, borderColor: colors.navy },
+  approachHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  approachTitle: { color: colors.navy, fontSize: 13, fontWeight: "900" },
+  approachPercent: { color: colors.coral, fontSize: 13, fontWeight: "900" },
+  approachGauge: { height: 28, marginTop: 7, borderRadius: 7, overflow: "hidden", flexDirection: "row", borderWidth: 2, borderColor: colors.navy, position: "relative" },
+  approachGreen: { flex: 1, backgroundColor: "#43D94D" },
+  approachYellow: { flex: 1, backgroundColor: "#F4D83D" },
+  approachRed: { flex: 1, backgroundColor: "#FF654F" },
+  approachFish: { position: "absolute", top: 1, marginLeft: -12, zIndex: 3 },
+  approachFishIcon: { fontSize: 18, transform: [{ scaleX: -1 }] },
+  approachHook: { position: "absolute", right: 2, top: 0, zIndex: 4 },
+  approachHookIcon: { fontSize: 18 },
+  approachMessage: { color: colors.muted, fontSize: 10, fontWeight: "800", textAlign: "center", marginTop: 5 },
   shadow: { width: 82, height: 28, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: "52%" },
   float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
   floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },

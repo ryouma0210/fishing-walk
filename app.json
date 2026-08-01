@@ -10,12 +10,6 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "現在地と近くの釣り場を地図に表示するため、位置情報を使用します。"
-        }
-      ],
       "expo-font",
       "expo-health-connect",
       [
@@ -49,8 +43,6 @@
         "backgroundColor": "#063B4C"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
         "android.permission.health.READ_STEPS"
       ]
     },

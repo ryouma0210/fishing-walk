@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import * as Location from "expo-location";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -31,14 +30,11 @@ function Choice<T extends string | number>({ value, options, onChange }: {
 export default function SettingsScreen() {
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [locationPermission, setLocationPermission] = useState("確認中");
   const [healthPermission, setHealthPermission] = useState("確認中");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setSettings(await getSettings());
-    const location = await Location.getForegroundPermissionsAsync();
-    setLocationPermission(location.status === "granted" ? "許可済み" : location.status === "denied" ? "拒否" : "未確認");
     const now = new Date();
     const health = await syncHealthMonth(now.getFullYear(), now.getMonth() + 1);
     setHealthPermission(`${health.provider}：${health.permission === "granted" ? "許可済み" : health.permission === "required" ? "権限が必要" : "利用不可"}`);
@@ -125,8 +121,7 @@ export default function SettingsScreen() {
         </Card>
 
         <Card>
-          <Text style={ui.h2}>位置情報・権限</Text>
-          <View style={styles.switchRow}><View><Text style={ui.body}>30秒ごとの位置情報更新</Text><Text style={ui.muted}>{locationPermission}</Text></View><Switch value={settings.locationUpdates} onValueChange={(locationUpdates) => update({ locationUpdates })} /></View>
+          <Text style={ui.h2}>歩数・権限</Text>
           <View style={styles.permission}><Text style={ui.body}>歩数データ</Text><Text style={styles.permissionValue}>{healthPermission}</Text></View>
           <Button title={busy ? "同期中…" : "歩数を再同期"} disabled={busy} onPress={resync} />
         </Card>

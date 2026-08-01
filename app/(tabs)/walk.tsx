@@ -65,7 +65,7 @@ export default function MyPage() {
         </Pressable>
         <Pressable onPress={() => router.push("/settings")} style={styles.menuItem}>
           <View style={styles.menuIcon}><Text style={styles.menuEmoji}>⚙️</Text></View>
-          <View style={styles.menuBody}><Text style={styles.menuTitle}>設定</Text><Text style={styles.menuSub}>音・振動・位置情報・データ管理</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>設定</Text><Text style={styles.menuSub}>音・振動・歩数連携・データ管理</Text></View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       </View>
