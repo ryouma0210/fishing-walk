@@ -266,6 +266,8 @@ export default function Aquarium() {
   const aquariums = useMemo(() => [...new Set(FISH.map((fish) => fish.aquarium))], []);
   const aquarium = selectedAquarium || aquariums[0];
   const master = FISH.filter((fish) => fish.aquarium === aquarium);
+  const habitat = master[0]?.habitats[0] ?? "pond";
+  const deepSea = aquarium.includes("深海");
   const caughtAll = rows.filter((row) => row.aquarium === aquarium);
   const caught = caughtAll.filter((row) => preferences.find((pref) => pref.fish_id === row.fish_id)?.visible !== 0);
   const swimmers = useMemo(() => caught.flatMap((row) => {
@@ -278,9 +280,18 @@ export default function Aquarium() {
   const selectedRecord = rows.find((row) => row.fish_id === selectedFishId);
   const selectedPreference = preferences.find((pref) => pref.fish_id === selectedFishId);
   const currentHour = new Date().getHours();
-  const effectiveTheme = settings.aquariumTheme === "auto"
+  const effectiveTheme = deepSea ? "night" : settings.aquariumTheme === "auto"
     ? (currentHour < 6 || currentHour >= 19 ? "night" : currentHour >= 16 ? "sunset" : "day")
     : settings.aquariumTheme;
+  const habitatDecor = deepSea
+    ? "🪨       ✨  🪨       💠"
+    : habitat === "pond"
+      ? settings.aquariumDecor === "rocks" ? "🪨  🌿      🪨   🌱" : "🪷  🌿      🌱   🪷"
+      : habitat === "river"
+        ? settings.aquariumDecor === "plants" ? "🌱   🌿       🌱" : "🪨   🪨  〰️   🪨"
+        : habitat === "lake"
+          ? settings.aquariumDecor === "rocks" ? "🪨      🪵   🪨" : "🌿    🪵      🌱"
+          : settings.aquariumDecor === "rocks" ? "🪨    🪨  🐚     🪨" : "🪸  🪸     🌿  🐚";
 
   const reloadPreferences = async () => setPreferences(await getAquariumPreferences());
   const feedFish = () => {
@@ -329,7 +340,7 @@ export default function Aquarium() {
     return (
       <SafeAreaView style={styles.fullScreen} edges={["top", "bottom"]}>
         <View style={[styles.fullTank, styles[`theme_${effectiveTheme}`]]}>
-          <AquariumHero height={height} rounded={false} />
+          <AquariumHero habitat={habitat} deepSea={deepSea} height={height} rounded={false} />
           <View pointerEvents="none" style={[styles.themeOverlay, styles[`overlay_${effectiveTheme}`]]} />
           <WaterShimmer height={height} />
           <View style={styles.swimLayer}>
@@ -356,7 +367,7 @@ export default function Aquarium() {
             {!swimmers.length && <Text style={styles.emptyTank}>この水族館の生き物を釣ると、ここで泳ぎ始めます</Text>}
           </View>
           <View pointerEvents="none" style={styles.decorLayer}>
-            <Text style={styles.decorText}>{settings.aquariumDecor === "plants" ? "🌿  🌱      🌿   🌱" : settings.aquariumDecor === "rocks" ? "🪨    🪨  🪨     🪨" : "🪸  🪸     🪸  🐚"}</Text>
+            <Text style={styles.decorText}>{habitatDecor}</Text>
           </View>
 
           <View style={styles.fullHeader}>
@@ -369,7 +380,7 @@ export default function Aquarium() {
           </View>
           <View style={styles.tankTools}>
             <Pressable onPress={feedFish} disabled={feeding} style={[styles.tankTool, feeding && styles.toolActive]}><Text style={styles.tankToolText}>{feeding ? "集合中…" : "無料で餌やり"}</Text></Pressable>
-            <Pressable onPress={() => updateAquariumSetting({ aquariumTheme: settings.aquariumTheme === "auto" ? "day" : settings.aquariumTheme === "day" ? "sunset" : settings.aquariumTheme === "sunset" ? "night" : "auto" })} style={styles.tankTool}><Text style={styles.tankToolText}>照明</Text></Pressable>
+            <Pressable disabled={deepSea} onPress={() => updateAquariumSetting({ aquariumTheme: settings.aquariumTheme === "auto" ? "day" : settings.aquariumTheme === "day" ? "sunset" : settings.aquariumTheme === "sunset" ? "night" : "auto" })} style={[styles.tankTool, deepSea && styles.toolActive]}><Text style={styles.tankToolText}>{deepSea ? "深海照明" : "照明"}</Text></Pressable>
             <Pressable onPress={() => updateAquariumSetting({ aquariumDecor: settings.aquariumDecor === "plants" ? "rocks" : settings.aquariumDecor === "rocks" ? "coral" : "plants" })} style={styles.tankTool}><Text style={styles.tankToolText}>装飾</Text></Pressable>
           </View>
           <View style={styles.fullCounter}><Text style={styles.tankCounterText}>{caught.length} species · {swimmers.length} creatures</Text></View>
@@ -414,7 +425,7 @@ export default function Aquarium() {
       {mode === "tank" ? (
         <>
           <View style={[styles.liveTank, styles[`theme_${effectiveTheme}`], { height: tankHeight }]}>
-            <AquariumHero height={tankHeight} />
+            <AquariumHero habitat={habitat} deepSea={deepSea} height={tankHeight} />
             <View pointerEvents="none" style={[styles.themeOverlay, styles[`overlay_${effectiveTheme}`]]} />
             <WaterShimmer height={tankHeight} />
             <View style={styles.swimLayer}>
@@ -443,13 +454,13 @@ export default function Aquarium() {
             </View>
             <View pointerEvents="none" style={styles.decorLayer}>
               <Text style={styles.decorText}>
-                {settings.aquariumDecor === "plants" ? "🌿  🌱      🌿   🌱" : settings.aquariumDecor === "rocks" ? "🪨    🪨  🪨     🪨" : "🪸  🪸     🪸  🐚"}
+                {habitatDecor}
               </Text>
             </View>
             <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>LIVE · {aquarium}</Text></View>
             <View style={styles.tankTools}>
               <Pressable onPress={feedFish} disabled={feeding} style={[styles.tankTool, feeding && styles.toolActive]}><Text style={styles.tankToolText}>{feeding ? "集まっています…" : "無料で餌やり"}</Text></Pressable>
-              <Pressable onPress={() => updateAquariumSetting({ aquariumTheme: settings.aquariumTheme === "auto" ? "day" : settings.aquariumTheme === "day" ? "sunset" : settings.aquariumTheme === "sunset" ? "night" : "auto" })} style={styles.tankTool}><Text style={styles.tankToolText}>照明：{settings.aquariumTheme === "auto" ? "自動" : settings.aquariumTheme === "day" ? "昼" : settings.aquariumTheme === "sunset" ? "夕" : "夜"}</Text></Pressable>
+              <Pressable disabled={deepSea} onPress={() => updateAquariumSetting({ aquariumTheme: settings.aquariumTheme === "auto" ? "day" : settings.aquariumTheme === "day" ? "sunset" : settings.aquariumTheme === "sunset" ? "night" : "auto" })} style={[styles.tankTool, deepSea && styles.toolActive]}><Text style={styles.tankToolText}>照明：{deepSea ? "深海固定" : settings.aquariumTheme === "auto" ? "自動" : settings.aquariumTheme === "day" ? "昼" : settings.aquariumTheme === "sunset" ? "夕" : "夜"}</Text></Pressable>
               <Pressable onPress={() => updateAquariumSetting({ aquariumDecor: settings.aquariumDecor === "plants" ? "rocks" : settings.aquariumDecor === "rocks" ? "coral" : "plants" })} style={styles.tankTool}><Text style={styles.tankToolText}>水草・岩</Text></Pressable>
             </View>
             <View style={styles.tankCounter}><Text style={styles.tankCounterText}>{caught.length} species · {swimmers.length} creatures</Text></View>
