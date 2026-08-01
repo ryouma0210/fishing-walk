@@ -29,17 +29,6 @@ export type ShopItem = {
   consumable?: boolean;
 };
 
-export type FishingSpot = {
-  id: string;
-  name: string;
-  habitat: Habitat;
-  emoji: string;
-  latitude: number;
-  longitude: number;
-  unlockSteps: number;
-  placeType?: "restaurant" | "station" | "park";
-};
-
 export const RANKS: Rank[] = ["E", "D", "C", "B", "A", "S", "SS", "SSS"];
 export const RANK_INDEX = Object.fromEntries(RANKS.map((rank, index) => [rank, index])) as Record<Rank, number>;
 export const HABITAT_NAMES: Record<Habitat, string> = {
@@ -168,10 +157,10 @@ export const SHOP: ShopItem[] = [
   {id:"rod2",name:"カーボンロッド",emoji:"🎣",kind:"rod",cost:240,effect:"rod",power:2,description:"必要維持時間-10%"},
   {id:"rod3",name:"チタンロッド",emoji:"🎣",kind:"rod",cost:800,effect:"rod",power:3,description:"必要維持時間-15%"},
   {id:"rod4",name:"マスターロッド",emoji:"⚡",kind:"rod",cost:2400,effect:"rod",power:4,description:"必要維持時間-20%"},
-  {id:"reel1",name:"スピンリール",emoji:"⚙️",kind:"reel",cost:55,effect:"reel",power:1,description:"対象ゲージ+3%"},
-  {id:"reel2",name:"精密リール",emoji:"⚙️",kind:"reel",cost:230,effect:"reel",power:2,description:"対象ゲージ+6%"},
-  {id:"reel3",name:"パワーリール",emoji:"⚙️",kind:"reel",cost:760,effect:"reel",power:3,description:"対象ゲージ+9%"},
-  {id:"reel4",name:"海王リール",emoji:"💠",kind:"reel",cost:2200,effect:"reel",power:4,description:"対象ゲージ+12%"},
+  {id:"reel1",name:"スピンリール",emoji:"⚙️",kind:"reel",cost:55,effect:"reel",power:1,description:"対象ゲージ+3%・時間-4%"},
+  {id:"reel2",name:"精密リール",emoji:"⚙️",kind:"reel",cost:230,effect:"reel",power:2,description:"対象ゲージ+6%・時間-8%"},
+  {id:"reel3",name:"パワーリール",emoji:"⚙️",kind:"reel",cost:760,effect:"reel",power:3,description:"対象ゲージ+9%・時間-12%"},
+  {id:"reel4",name:"海王リール",emoji:"💠",kind:"reel",cost:2200,effect:"reel",power:4,description:"対象ゲージ+12%・時間-16%"},
   {id:"bait1",name:"ミミズ餌",emoji:"🪱",kind:"bait",cost:1,effect:"bait",power:1,description:"E・Dランク狙い／1投分",targetRanks:["E","D"],consumable:true},
   {id:"bait2",name:"練り餌",emoji:"🍡",kind:"bait",cost:3,effect:"bait",power:2,description:"C・Bランク狙い／1投分",targetRanks:["C","B"],consumable:true},
   {id:"bait3",name:"活き餌",emoji:"🪣",kind:"bait",cost:8,effect:"bait",power:3,description:"A・Sランク狙い／1投分",targetRanks:["A","S"],consumable:true},
@@ -186,14 +175,3 @@ export const DEFAULT_GEAR: Record<GearKind, string> = {
   hat: "なし", top: "普段着", bottom: "普段のズボン", shoes: "スニーカー",
   rod: "ビギナーロッド", reel: "標準リール", bait: "餌なし", cooler: "簡易バケツ（10匹）",
 };
-
-export function createFishingSpots(latitude: number, longitude: number): FishingSpot[] {
-  return [
-    { id:"park-near-1",name:"近くの公園",habitat:"pond",emoji:"🌳",latitude:latitude+0.0018,longitude:longitude+0.0012,unlockSteps:0,placeType:"park" },
-    { id:"station-near-1",name:"近くの駅",habitat:"river",emoji:"🚉",latitude:latitude-0.0024,longitude:longitude+0.0018,unlockSteps:1000,placeType:"station" },
-    { id:"restaurant-near-1",name:"近くの飲食店",habitat:"lake",emoji:"🍽️",latitude:latitude+0.0028,longitude:longitude-0.0021,unlockSteps:2000,placeType:"restaurant" },
-    { id:"park-near-2",name:"散歩先の公園",habitat:"lake",emoji:"🌳",latitude:latitude-0.0034,longitude:longitude-0.0024,unlockSteps:3500,placeType:"park" },
-    { id:"station-near-2",name:"散歩先の駅",habitat:"sea",emoji:"🚉",latitude:latitude+0.0041,longitude:longitude+0.0031,unlockSteps:5000,placeType:"station" },
-    { id:"restaurant-near-2",name:"散歩先の飲食店",habitat:"sea",emoji:"🍽️",latitude:latitude-0.0048,longitude:longitude+0.0035,unlockSteps:8000,placeType:"restaurant" },
-  ];
-}

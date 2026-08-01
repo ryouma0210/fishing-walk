@@ -18,7 +18,6 @@ const anglerOutfits = [
   require("../../assets/game/angler-outfit-storm.png"),
   require("../../assets/game/angler-outfit-sea-king.png"),
 ];
-const mapAvatars = require("../../assets/game/map-avatars.png");
 const ANGLER_ASPECT_RATIO = 2 / 3;
 
 const fishIndexes = Object.fromEntries(FISH.map((fish, index) => [fish.id, index]));
@@ -127,25 +126,6 @@ export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?
         style={{
           height,
           width: frameWidth,
-        }}
-      />
-    </View>
-  );
-}
-
-export function MapAvatar({ stage = 0, height = 94 }: { stage?: number; height?: number }) {
-  const safeStage = Math.max(0, Math.min(3, stage));
-  const width = height * 0.5;
-  return (
-    <View style={{ width, height, overflow: "hidden" }}>
-      <Image
-        source={mapAvatars}
-        resizeMode="stretch"
-        style={{
-          position: "absolute",
-          height,
-          width: width * 4,
-          left: -safeStage * width,
         }}
       />
     </View>

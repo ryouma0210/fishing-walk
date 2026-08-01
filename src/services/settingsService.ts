@@ -6,7 +6,6 @@ export type AppSettings = {
   vibration: boolean;
   animationSpeed: number;
   textScale: number;
-  locationUpdates: boolean;
   aquariumTheme: "auto" | "day" | "sunset" | "night";
   aquariumDecor: "plants" | "rocks" | "coral";
 };
@@ -16,7 +15,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vibration: true,
   animationSpeed: 1,
   textScale: 1,
-  locationUpdates: true,
   aquariumTheme: "auto",
   aquariumDecor: "plants",
 };
