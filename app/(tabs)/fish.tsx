@@ -31,14 +31,14 @@ type CatchResult = {
 type BattleConfig = { zone: number; seconds: number; pull: number };
 
 const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
-  E: { zone: 30, seconds: 38, pull: 0.65 },
-  D: { zone: 27, seconds: 45, pull: 0.78 },
-  C: { zone: 24, seconds: 52, pull: 0.92 },
+  E: { zone: 30, seconds: 15, pull: 0.65 },
+  D: { zone: 27, seconds: 30, pull: 0.78 },
+  C: { zone: 24, seconds: 45, pull: 0.92 },
   B: { zone: 21, seconds: 60, pull: 1.08 },
-  A: { zone: 18, seconds: 70, pull: 1.28 },
-  S: { zone: 14, seconds: 82, pull: 1.52 },
-  SS: { zone: 10, seconds: 96, pull: 1.82 },
-  SSS: { zone: 6, seconds: 115, pull: 2.2 },
+  A: { zone: 18, seconds: 90, pull: 1.28 },
+  S: { zone: 14, seconds: 120, pull: 1.52 },
+  SS: { zone: 10, seconds: 150, pull: 1.82 },
+  SSS: { zone: 6, seconds: 180, pull: 2.2 },
 };
 
 function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
@@ -49,6 +49,13 @@ function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
     return stage ? stage * 4 : 0;
   }
   return items.filter((item) => item.effect === effect).reduce((sum, item) => sum + item.power, 0);
+}
+
+function battleSeconds(rank: Rank, items: ShopItem[]) {
+  const base = BATTLE_CONFIG[rank].seconds;
+  const rodRate = effectPower(items, "rod") * 0.05;
+  const reelRate = effectPower(items, "reel") * 0.04;
+  return base * (1 - rodRate) * (1 - reelRate);
 }
 
 function baitRank(steps: number, bait: ShopItem) {
@@ -268,7 +275,7 @@ export default function FishScreen() {
     const outfitPower = effectPower(gear, "outfit");
     const reelPower = effectPower(gear, "reel");
     const effectiveZone = Math.min(72, config.zone + reelPower * 3);
-    const effectiveSeconds = config.seconds * (1 - effectPower(gear, "rod") * 0.05);
+    const effectiveSeconds = battleSeconds(candidate.rank, gear);
     const started = Date.now();
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
@@ -316,7 +323,7 @@ export default function FishScreen() {
 
   const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
   const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3);
-  const effectiveSeconds = config.seconds * (1 - effectPower(gear, "rod") * 0.05);
+  const effectiveSeconds = candidate ? battleSeconds(candidate.rank, gear) : config.seconds;
   const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));
   const equippedCooler = gear.find((item) => item.kind === "cooler");
   const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
@@ -402,7 +409,7 @@ export default function FishScreen() {
             {phase === "battle" && candidate && <>
               <View style={styles.between}>
                 <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
-                <Text style={styles.muted}>維持目標 {effectiveSeconds.toFixed(1)}秒</Text>
+                <Text style={styles.muted}>基準 {config.seconds}秒 → 装備後 {effectiveSeconds.toFixed(1)}秒</Text>
               </View>
               <Text style={styles.battleHelp}>魚を水色の範囲内に維持</Text>
               <View style={styles.gauge}>
