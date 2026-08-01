@@ -230,12 +230,12 @@ export default function FishScreen() {
   const startBattle = () => {
     if (!candidate || phase !== "bite") return;
     clearTimer();
-    cursorRef.current = 50;
-    targetRef.current = 50;
+    cursorRef.current = 82;
+    targetRef.current = 34;
     progressRef.current = 0;
     finishingRef.current = false;
-    setCursor(50);
-    setTargetCenter(50);
+    setCursor(82);
+    setTargetCenter(34);
     setBattleProgress(0);
     setPhase("battle");
     vibrate("tap");
@@ -279,7 +279,7 @@ export default function FishScreen() {
     const started = Date.now();
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
-      const target = 50 + Math.sin(elapsed / (760 - RANK_INDEX[candidate.rank] * 45)) * (9 + RANK_INDEX[candidate.rank] * 1.7);
+      const target = 34;
       const personality = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0) % 4;
       const burst = personality === 0 ? Math.sin(elapsed / 93) * (elapsed % 2400 < 430 ? 2.2 : 0)
         : personality === 1 ? Math.cos(elapsed / 150) * 0.75
@@ -287,18 +287,20 @@ export default function FishScreen() {
             : Math.sin(elapsed / 420) * 0.5;
       targetRef.current = target;
       const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03);
-      const fishPull = Math.sin(elapsed / (240 - RANK_INDEX[candidate.rank] * 12)) * adjustedPull
-        + (Math.random() - 0.5) * adjustedPull;
-      const reel = holdingRef.current ? 1.25 + reelPower * 0.035 : -0.9;
+      const fishEscape = 0.3 + adjustedPull * 0.13
+        + Math.max(-0.12, burst * 0.1)
+        + (Math.random() - 0.5) * adjustedPull * 0.08;
+      const reel = holdingRef.current ? -(0.66 + reelPower * 0.04) : 0;
       if (holdingRef.current && Date.now() - reelAudioAtRef.current > 320) {
         reelAudioAtRef.current = Date.now();
         playSound(reelSound);
       }
-      const nextCursor = Math.max(0, Math.min(100, cursorRef.current + reel + fishPull + burst));
+      const rawCursor = cursorRef.current + reel + fishEscape;
+      const nextCursor = Math.max(0, Math.min(100, rawCursor));
       cursorRef.current = nextCursor;
       const inside = Math.abs(nextCursor - target) <= effectiveZone / 2;
       const gain = 50 / (effectiveSeconds * 1000) * 100;
-      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain : -gain * 0.65)));
+      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain : -gain * 0.85)));
       setCursor(nextCursor);
       setTargetCenter(target);
       setBattleProgress(progressRef.current);
@@ -310,9 +312,9 @@ export default function FishScreen() {
       if (progressRef.current >= 100) {
         clearInterval(interval);
         finishCatch();
-      } else if ((nextCursor <= 0 || nextCursor >= 100) && elapsed > 1800) {
+      } else if ((rawCursor <= 0 || rawCursor >= 100) && elapsed > 1800) {
         clearInterval(interval);
-        setEscapeReason(nextCursor <= 0 ? "糸が緩み、魚に逃げられました" : "テンションが上がりすぎて糸が切れました");
+        setEscapeReason(rawCursor <= 0 ? "巻きすぎて糸が切れました" : "魚がゲージ外へ逃げ、糸が切れました");
         playSound(escapeSound);
         vibrate("error");
         setPhase("escaped");
@@ -325,6 +327,9 @@ export default function FishScreen() {
   const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3);
   const effectiveSeconds = candidate ? battleSeconds(candidate.rank, gear) : config.seconds;
   const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));
+  const inTargetZone = Math.abs(cursor - targetCenter) <= effectiveZone / 2;
+  const battleDanger = cursor < 10 || cursor > 90;
+  const captureColor = battleProgress >= 70 ? "#36C96B" : battleProgress >= 35 ? colors.gold : colors.coral;
   const equippedCooler = gear.find((item) => item.kind === "cooler");
   const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
 
@@ -411,12 +416,24 @@ export default function FishScreen() {
                 <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
                 <Text style={styles.muted}>基準 {config.seconds}秒 → 装備後 {effectiveSeconds.toFixed(1)}秒</Text>
               </View>
-              <Text style={styles.battleHelp}>魚を水色の範囲内に維持</Text>
-              <View style={styles.gauge}>
-                <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
-                <View style={[styles.fishCursor, { left: `${Math.max(1, Math.min(97, cursor))}%` }]}><Text>🐟</Text></View>
+              <View style={styles.battleStatusRow}>
+                <Text style={styles.battleHelp}>魚を緑の枠まで巻き寄せて維持</Text>
+                <Text style={[styles.battleStatus, inTargetZone && styles.battleStatusSafe, battleDanger && styles.battleStatusDanger]}>
+                  {battleDanger ? "糸切れ注意" : inTargetZone ? "捕獲中！" : cursor > targetCenter ? "魚が逃走中" : "巻きすぎ注意"}
+                </Text>
               </View>
-              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%` }]} /></View>
+              <View style={styles.distanceLabels}>
+                <Text style={styles.distanceLabel}>近い</Text><Text style={styles.distanceTitle}>魚との距離</Text><Text style={styles.distanceLabel}>遠い</Text>
+              </View>
+              <View style={styles.gauge}>
+                <View style={styles.distanceGreen} />
+                <View style={styles.distanceYellow} />
+                <View style={styles.distanceRed} />
+                <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
+                <View style={styles.anglerCursor}><Text style={styles.anglerIcon}>🧍</Text></View>
+                <View style={[styles.fishCursor, { left: `${Math.max(4, Math.min(96, cursor))}%` }]}><Text style={styles.battleFishIcon}>🐟</Text></View>
+              </View>
+              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%`, backgroundColor: captureColor }]} /></View>
               <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
               <Pressable
                 onPressIn={() => {
@@ -428,7 +445,8 @@ export default function FishScreen() {
                 }}
                 style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
               >
-                <Text style={styles.reelText}>長押しでリールを巻く</Text>
+                <Text style={styles.reelText}>長押しして左へ巻き寄せる</Text>
+                <Text style={styles.reelSubText}>離すと魚は右へ逃げます</Text>
               </Pressable>
             </>}
           </View>
@@ -529,16 +547,30 @@ const styles = StyleSheet.create({
   phase: { textAlign: "center", color: colors.navy, fontWeight: "900", fontSize: 18, paddingVertical: 12 },
   bite: { textAlign: "center", color: colors.coral, fontSize: 22, fontWeight: "900" },
   escape: { textAlign: "center", color: colors.danger, fontSize: 18, fontWeight: "900" },
-  battleHelp: { color: colors.ink, textAlign: "center", fontSize: 12 },
-  gauge: { height: 58, backgroundColor: "#D9E6E7", borderRadius: 14, position: "relative", overflow: "hidden", borderWidth: 2, borderColor: colors.navy },
-  targetZone: { position: "absolute", top: 0, bottom: 0, backgroundColor: "rgba(33,182,168,.55)", borderLeftWidth: 2, borderRightWidth: 2, borderColor: colors.aqua },
-  fishCursor: { position: "absolute", top: 15, marginLeft: -12 },
+  battleStatusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  battleHelp: { color: colors.ink, fontSize: 11, fontWeight: "700", flex: 1 },
+  battleStatus: { color: colors.gold, fontSize: 11, fontWeight: "900" },
+  battleStatusSafe: { color: "#179653" },
+  battleStatusDanger: { color: colors.danger },
+  distanceLabels: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: -5 },
+  distanceLabel: { color: colors.muted, fontSize: 9, fontWeight: "800" },
+  distanceTitle: { color: colors.navy, fontSize: 11, fontWeight: "900" },
+  gauge: { height: 64, borderRadius: 15, position: "relative", overflow: "hidden", borderWidth: 3, borderColor: colors.navy, flexDirection: "row" },
+  distanceGreen: { flex: 1, backgroundColor: "#42D96B" },
+  distanceYellow: { flex: 1, backgroundColor: "#F5D94B" },
+  distanceRed: { flex: 1, backgroundColor: "#FF6858" },
+  targetZone: { position: "absolute", top: 3, bottom: 3, backgroundColor: "rgba(255,255,255,.3)", borderWidth: 3, borderColor: "#058C62", borderRadius: 9 },
+  anglerCursor: { position: "absolute", left: 2, top: 14, zIndex: 4 },
+  anglerIcon: { fontSize: 24 },
+  fishCursor: { position: "absolute", top: 16, marginLeft: -13, zIndex: 5 },
+  battleFishIcon: { fontSize: 22, transform: [{ scaleX: -1 }] },
   progressTrack: { height: 13, backgroundColor: colors.line, borderRadius: 8, marginTop: 3, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: colors.gold },
   progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
   reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 2 },
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelText: { color: colors.white, fontWeight: "900", fontSize: 16 },
+  reelSubText: { color: "rgba(255,255,255,.8)", fontWeight: "700", fontSize: 10, marginTop: 2 },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
   resultActions: { flexDirection: "row", gap: 8, alignSelf: "stretch", marginTop: 4 },
   resultAction: { flex: 1 },

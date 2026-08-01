@@ -1,25 +1,28 @@
-import { useCallback, useMemo, useState } from "react";
-import { ImageBackground, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Button, Card, ui } from "../../src/components/ui";
+import { Button } from "../../src/components/ui";
 import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
 import { FISH } from "../../src/constants/game";
 import { getCatchSummaries } from "../../src/database/db";
-import { getSelectedArea, selectArea } from "../../src/services/areaService";
+import { selectArea } from "../../src/services/areaService";
 import { colors, rankColors } from "../../src/constants/theme";
 
 const worldBackground = require("../../assets/game/fishing-area-world.png");
+const advancedWorldBackground = require("../../assets/game/fishing-area-world-2.png");
 
 export default function AreaScreen() {
   const router = useRouter();
+  const { height } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
   const [caughtIds, setCaughtIds] = useState<Set<string>>(new Set());
-  const [selected, setSelected] = useState<FishingArea>(FISHING_AREAS[0]);
+  const [selected, setSelected] = useState<FishingArea | null>(null);
 
   useFocusEffect(useCallback(() => {
-    Promise.all([getCatchSummaries(), getSelectedArea()]).then(([rows, savedArea]) => {
+    getCatchSummaries().then((rows) => {
       setCaughtIds(new Set(rows.map((row) => row.fish_id)));
-      setSelected(savedArea);
+      setSelected(null);
     });
   }, []));
 
@@ -33,78 +36,123 @@ export default function AreaScreen() {
       total: FISH.filter((fish) => fish.habitats.includes(area.habitat)).length,
     };
   }), [caughtIds]);
-  const selectedState = states.find((state) => state.area.id === selected.id) ?? states[0];
+  const selectedState = selected ? states.find((state) => state.area.id === selected.id) ?? null : null;
 
   const enterArea = async () => {
-    if (!selectedState.unlocked) return;
+    if (!selected || !selectedState?.unlocked) return;
     await selectArea(selected);
     router.push("/(tabs)/fish");
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ImageBackground source={worldBackground} resizeMode="cover" style={styles.world}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Fishing Areas</Text>
-          <Text style={styles.sub}>ヌシを釣り上げて、次のエリアへ進もう</Text>
-          <View style={styles.progressRow}>
-            {states.map((state) => <View key={state.area.id} style={[styles.progressDot, state.unlocked && styles.progressUnlocked, state.cleared && styles.progressCleared]} />)}
-          </View>
-        </View>
-
-        {states.map((state, index) => {
-          const active = selected.id === state.area.id;
-          return (
-            <Pressable
-              key={state.area.id}
-              disabled={!state.unlocked}
-              onPress={() => setSelected(state.area)}
-              style={[styles.areaNode, { left: state.area.node.left, top: state.area.node.top }, !state.unlocked && styles.lockedNode]}
-            >
-              {index < states.length - 1 && <View style={[styles.routeStub, state.cleared && styles.routeCleared]} />}
-              <View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.cleared && styles.nodeCleared, active && styles.nodeActive]}>
-                <Text style={styles.nodeEmoji}>{state.unlocked ? state.area.emoji : "🔒"}</Text>
-              </View>
-              <View style={[styles.nodeLabel, active && styles.nodeLabelActive]}>
-                <Text numberOfLines={1} style={[styles.nodeName, active && styles.nodeNameActive]}>{index + 1}. {state.area.name}</Text>
-                <Text style={[styles.nodeStatus, active && styles.nodeNameActive]}>{state.cleared ? "★ CLEAR" : state.unlocked ? `${state.discovered}/${state.total}種` : "LOCKED"}</Text>
-              </View>
-            </Pressable>
-          );
-        })}
-
-        <Card style={styles.areaCard}>
-          <View style={ui.between}>
-            <View style={styles.areaInfo}>
-              <Text style={styles.areaName}>{selected.emoji} {selected.name}</Text>
-              <Text style={styles.areaSubtitle}>{selected.subtitle}</Text>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.worldScroll}
+        showsVerticalScrollIndicator
+        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+      >
+        {[2, 1].map((chapter) => (
+          <ImageBackground
+            key={chapter}
+            source={chapter === 1 ? worldBackground : advancedWorldBackground}
+            resizeMode="cover"
+            style={[styles.world, { height: Math.max(700, height - 78) }]}
+          >
+            <View style={styles.chapterBadge}>
+              <Text style={styles.chapterNumber}>CHAPTER {chapter}</Text>
+              <Text style={styles.chapterName}>{chapter === 1 ? "水辺のはじまり" : "幻境への挑戦"}</Text>
             </View>
-            <Text style={[styles.areaState, { color: selectedState.cleared ? colors.gold : selectedState.unlocked ? colors.ocean : colors.muted }]}>
-              {selectedState.cleared ? "CLEAR" : selectedState.unlocked ? "挑戦可能" : "未解放"}
-            </Text>
-          </View>
-          <View style={styles.bossBox}>
-            <Text style={styles.bossLabel}>AREA BOSS</Text>
-            <Text style={styles.bossName}>👑 {selected.bossName}</Text>
-            <Text style={styles.bossHint}>{selectedState.cleared ? "釣り上げ済み。次のエリアが解放されています" : "SSSランク対応の餌でヌシに挑戦"}</Text>
-          </View>
-          <Button title={selectedState.unlocked ? "このエリアで釣る" : "前のエリアのヌシを釣ると解放"} disabled={!selectedState.unlocked} onPress={enterArea} />
-        </Card>
-      </ImageBackground>
+
+            {states.filter((state) => state.area.chapter === chapter).map((state) => {
+              const index = FISHING_AREAS.findIndex((area) => area.id === state.area.id);
+              const active = selected?.id === state.area.id;
+              return (
+                <Pressable
+                  key={state.area.id}
+                  onPress={() => setSelected(state.area)}
+                  style={[styles.areaNode, { left: state.area.node.left, top: state.area.node.top }, !state.unlocked && styles.lockedNode]}
+                >
+                  {index % 4 < 3 && <View style={[styles.routeStub, state.cleared && styles.routeCleared]} />}
+                  <View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.cleared && styles.nodeCleared, active && styles.nodeActive]}>
+                    <Text style={styles.nodeEmoji}>{state.unlocked ? state.area.emoji : "🔒"}</Text>
+                  </View>
+                  <View style={[styles.nodeLabel, active && styles.nodeLabelActive]}>
+                    <Text numberOfLines={1} style={[styles.nodeName, active && styles.nodeNameActive]}>{index + 1}. {state.area.name}</Text>
+                    <Text style={[styles.nodeStatus, active && styles.nodeNameActive]}>{state.cleared ? "★ CLEAR" : state.unlocked ? `${state.discovered}/${state.total}種` : "LOCKED"}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </ImageBackground>
+        ))}
+      </ScrollView>
+
+      <View style={styles.header}>
+        <Text style={styles.title}>Fishing Areas</Text>
+        <Text style={styles.sub}>上へ進み、8つのエリアのヌシに挑もう</Text>
+        <View style={styles.progressRow}>
+          {states.map((state) => <View key={state.area.id} style={[styles.progressDot, state.unlocked && styles.progressUnlocked, state.cleared && styles.progressCleared]} />)}
+        </View>
+      </View>
+
+      <Modal visible={selected !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setSelected(null)}>
+        <View style={styles.modalBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelected(null)} />
+          {selected && selectedState && (
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHero}>
+                <View style={[styles.modalIcon, !selectedState.unlocked && styles.modalIconLocked]}>
+                  <Text style={styles.modalEmoji}>{selectedState.unlocked ? selected.emoji : "🔒"}</Text>
+                </View>
+                <View style={styles.areaInfo}>
+                  <Text style={styles.modalEyebrow}>FISHING AREA</Text>
+                  <Text style={styles.areaName}>{selected.name}</Text>
+                  <Text style={styles.areaSubtitle}>{selected.subtitle}</Text>
+                </View>
+                <View style={[styles.statePill, selectedState.cleared && styles.statePillCleared, !selectedState.unlocked && styles.statePillLocked]}>
+                  <Text style={styles.statePillText}>{selectedState.cleared ? "CLEAR" : selectedState.unlocked ? "挑戦可能" : "LOCKED"}</Text>
+                </View>
+              </View>
+
+              <View style={styles.discoveryRow}>
+                <Text style={styles.discoveryLabel}>このエリアの発見数</Text>
+                <Text style={styles.discoveryValue}>{selectedState.discovered}<Text style={styles.discoveryTotal}> / {selectedState.total}種</Text></Text>
+              </View>
+              <View style={styles.bossBox}>
+                <View>
+                  <Text style={styles.bossLabel}>AREA BOSS</Text>
+                  <Text style={styles.bossName}>👑 {selected.bossName}</Text>
+                </View>
+                <Text style={styles.bossHint}>{selectedState.cleared ? "ヌシ捕獲済み・何度でも挑戦できます" : selectedState.unlocked ? "SSSランク対応の餌でヌシに挑戦" : "前のエリアのヌシを釣ると解放されます"}</Text>
+              </View>
+              <Button title={selectedState.unlocked ? "このエリアで釣る" : "まだこのエリアには入れません"} disabled={!selectedState.unlocked} onPress={enterArea} />
+              <Pressable onPress={() => setSelected(null)} style={styles.cancelButton}>
+                <Text style={styles.cancelText}>キャンセル</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#DDF6F6" },
-  world: { flex: 1, position: "relative", overflow: "hidden" },
-  header: { position: "absolute", top: 8, left: 12, right: 12, borderRadius: 18, padding: 12, backgroundColor: "rgba(255,255,255,.94)", shadowColor: colors.navy, shadowOpacity: .18, shadowRadius: 8 },
+  worldScroll: { flex: 1, backgroundColor: "#071D38" },
+  world: { position: "relative", overflow: "hidden" },
+  header: { position: "absolute", zIndex: 20, top: 8, left: 12, right: 12, borderRadius: 18, padding: 12, backgroundColor: "rgba(255,255,255,.94)", shadowColor: colors.navy, shadowOpacity: .18, shadowRadius: 8, elevation: 10 },
   title: { color: colors.navy, fontSize: 23, fontWeight: "900" },
   sub: { color: colors.muted, fontSize: 11, marginTop: 2 },
   progressRow: { flexDirection: "row", gap: 7, marginTop: 8 },
   progressDot: { flex: 1, height: 5, borderRadius: 99, backgroundColor: "#C9D4D5" },
   progressUnlocked: { backgroundColor: colors.aqua },
   progressCleared: { backgroundColor: colors.gold },
+  chapterBadge: { position: "absolute", left: 12, top: 118, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "rgba(5,42,57,.82)" },
+  chapterNumber: { color: colors.aqua, fontSize: 9, fontWeight: "900", letterSpacing: 1.3 },
+  chapterName: { color: colors.white, fontSize: 15, fontWeight: "900", marginTop: 1 },
   areaNode: { position: "absolute", width: 132, marginLeft: -66, alignItems: "center", zIndex: 3 },
   lockedNode: { opacity: .68 },
   routeStub: { position: "absolute", width: 6, height: 78, top: -55, left: 63, borderRadius: 6, backgroundColor: "rgba(255,255,255,.72)", transform: [{ rotate: "-17deg" }] },
@@ -119,13 +167,29 @@ const styles = StyleSheet.create({
   nodeName: { color: colors.white, fontSize: 10, fontWeight: "900" },
   nodeNameActive: { color: colors.white },
   nodeStatus: { color: "#B9F5EF", fontSize: 8, fontWeight: "800", marginTop: 1 },
-  areaCard: { position: "absolute", left: 12, right: 12, bottom: 12, padding: 13, gap: 9 },
   areaInfo: { flex: 1, paddingRight: 8 },
-  areaName: { color: colors.ink, fontSize: 18, fontWeight: "900" },
-  areaSubtitle: { color: colors.muted, fontSize: 10, marginTop: 2 },
-  areaState: { fontSize: 11, fontWeight: "900" },
-  bossBox: { borderRadius: 12, padding: 9, backgroundColor: colors.foam },
+  areaName: { color: colors.ink, fontSize: 22, fontWeight: "900" },
+  areaSubtitle: { color: colors.muted, fontSize: 12, marginTop: 3 },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(3,24,35,.58)" },
+  modalSheet: { margin: 10, padding: 18, paddingBottom: 14, borderRadius: 28, gap: 13, backgroundColor: "rgba(255,255,255,.98)", shadowColor: "#000", shadowOpacity: .28, shadowRadius: 24, elevation: 24 },
+  modalHandle: { alignSelf: "center", width: 42, height: 5, borderRadius: 99, backgroundColor: "#D1DEDF", marginBottom: 2 },
+  modalHero: { flexDirection: "row", alignItems: "center", gap: 12 },
+  modalIcon: { width: 58, height: 58, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#DDF8F4", borderWidth: 1, borderColor: "#B8E9E2" },
+  modalIconLocked: { backgroundColor: "#EDF0F1", borderColor: "#D3DADB" },
+  modalEmoji: { fontSize: 29 },
+  modalEyebrow: { color: colors.ocean, fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
+  statePill: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: colors.ocean },
+  statePillCleared: { backgroundColor: colors.gold },
+  statePillLocked: { backgroundColor: "#879899" },
+  statePillText: { color: colors.white, fontSize: 9, fontWeight: "900" },
+  discoveryRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", borderRadius: 15, paddingHorizontal: 13, paddingVertical: 10, backgroundColor: "#F3F8F8" },
+  discoveryLabel: { color: colors.muted, fontSize: 11, fontWeight: "700" },
+  discoveryValue: { color: colors.navy, fontSize: 21, fontWeight: "900" },
+  discoveryTotal: { color: colors.muted, fontSize: 11 },
+  bossBox: { borderRadius: 16, padding: 13, backgroundColor: colors.foam, borderWidth: 1, borderColor: "#D5EEEB" },
   bossLabel: { color: rankColors.SSS, fontSize: 9, fontWeight: "900" },
   bossName: { color: colors.navy, fontSize: 14, fontWeight: "900", marginTop: 2 },
   bossHint: { color: colors.muted, fontSize: 9, marginTop: 2 },
+  cancelButton: { alignItems: "center", paddingVertical: 5 },
+  cancelText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
 });

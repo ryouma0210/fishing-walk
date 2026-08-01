@@ -10,7 +10,13 @@ const fishSheets: Record<Habitat, number> = {
 const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
 const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
 const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
-const aquariumBackground = require("../../assets/game/aquarium-background.png");
+const aquariumBackground: Record<Habitat | "deepsea", number> = {
+  pond: require("../../assets/game/aquarium-pond.png"),
+  river: require("../../assets/game/aquarium-river.png"),
+  lake: require("../../assets/game/aquarium-lake.png"),
+  sea: require("../../assets/game/aquarium-sea.png"),
+  deepsea: require("../../assets/game/aquarium-deepsea.png"),
+};
 const anglerOutfits = [
   require("../../assets/game/angler-outfit-casual.png"),
   require("../../assets/game/angler-outfit-light.png"),
@@ -111,8 +117,13 @@ function ResponsiveCrop({ source, index, columns, height }: {
   );
 }
 
-export function AquariumHero({ height = 180, rounded = true }: { height?: number; rounded?: boolean }) {
-  return <ImageBackground source={aquariumBackground} resizeMode="cover" style={[styles.aquarium, !rounded && styles.square, { height }]} />;
+export function AquariumHero({ habitat = "pond", deepSea = false, height = 180, rounded = true }: {
+  habitat?: Habitat;
+  deepSea?: boolean;
+  height?: number;
+  rounded?: boolean;
+}) {
+  return <ImageBackground source={aquariumBackground[deepSea ? "deepsea" : habitat]} resizeMode="cover" style={[styles.aquarium, !rounded && styles.square, { height }]} />;
 }
 
 export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?: number }) {
