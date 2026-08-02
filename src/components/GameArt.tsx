@@ -1,21 +1,52 @@
 import { Image, ImageBackground, StyleSheet, View } from "react-native";
 import { FISH, Habitat, SHOP } from "../constants/game";
 
-const commonFish = require("../../assets/game/fish-common-sheet.png");
-const rareFish = require("../../assets/game/fish-rare-sheet.png");
-const gearSheet = require("../../assets/game/gear-sheet.png");
+const fishSheets: Record<Habitat, number> = {
+  pond: require("../../assets/game/fish-pond-transparent.png"),
+  river: require("../../assets/game/fish-river-transparent.png"),
+  lake: require("../../assets/game/fish-lake-transparent.png"),
+  sea: require("../../assets/game/fish-sea-transparent.png"),
+};
+const extraFishSheets: Record<Habitat, number> = {
+  pond: require("../../assets/game/fish-pond-extra-transparent.png"),
+  river: require("../../assets/game/fish-river-extra-transparent.png"),
+  lake: require("../../assets/game/fish-lake-extra-transparent.png"),
+  sea: require("../../assets/game/fish-sea-extra-transparent.png"),
+};
+const extraFishGrid: Record<Habitat, { columns: number; rows: number }> = {
+  pond: { columns: 5, rows: 6 },
+  river: { columns: 5, rows: 6 },
+  lake: { columns: 5, rows: 4 },
+  sea: { columns: 5, rows: 4 },
+};
+const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
+const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
 const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
-const aquariumBackground = require("../../assets/game/aquarium-background.png");
-const anglerOutfits = require("../../assets/game/angler-outfits.png");
+const aquariumBackground: Record<Habitat | "deepsea", number> = {
+  pond: require("../../assets/game/aquarium-pond.png"),
+  river: require("../../assets/game/aquarium-river.png"),
+  lake: require("../../assets/game/aquarium-lake.png"),
+  sea: require("../../assets/game/aquarium-sea.png"),
+  deepsea: require("../../assets/game/aquarium-deepsea.png"),
+};
+const anglerOutfits = [
+  require("../../assets/game/angler-outfit-casual.png"),
+  require("../../assets/game/angler-outfit-light.png"),
+  require("../../assets/game/angler-outfit-waterproof.png"),
+  require("../../assets/game/angler-outfit-storm.png"),
+  require("../../assets/game/angler-outfit-sea-king.png"),
+];
+const ANGLER_ASPECT_RATIO = 2 / 3;
 
 const fishIndexes = Object.fromEntries(FISH.map((fish, index) => [fish.id, index]));
 const gearIndexes = Object.fromEntries(SHOP.map((item, index) => [item.id, index]));
 const habitatIndexes: Record<Habitat, number> = { pond: 0, river: 1, lake: 2, sea: 3 };
 
-function GridSprite({ source, index, columns, size }: {
+function GridSprite({ source, index, columns, rows = columns, size }: {
   source: number;
   index: number;
   columns: number;
+  rows?: number;
   size: number;
 }) {
   const row = Math.floor(index / columns);
@@ -28,7 +59,7 @@ function GridSprite({ source, index, columns, size }: {
         style={{
           position: "absolute",
           width: size * columns,
-          height: size * columns,
+          height: size * rows,
           left: -column * size,
           top: -row * size,
         }}
@@ -43,18 +74,35 @@ export function FishArt({ fishId, size = 72, locked = false }: {
   locked?: boolean;
 }) {
   const globalIndex = fishIndexes[fishId] ?? 0;
-  const index = globalIndex % 16;
+  const fish = FISH[globalIndex] ?? FISH[0];
+  const habitat = fish.habitats[0];
+  const habitatFish = FISH.filter((entry) => entry.habitats[0] === habitat);
+  const index = habitatFish.findIndex((entry) => entry.id === fishId);
+  const isExtra = index >= 20;
+  const grid = extraFishGrid[habitat];
   return (
-    <View style={[styles.rounded, locked && styles.locked]}>
-      <GridSprite source={globalIndex < 16 ? commonFish : rareFish} index={index} columns={4} size={size} />
+    <View style={locked && styles.locked}>
+      <GridSprite
+        source={isExtra ? extraFishSheets[habitat] : fishSheets[habitat]}
+        index={Math.max(0, isExtra ? index - 20 : index)}
+        columns={isExtra ? grid.columns : 4}
+        rows={isExtra ? grid.rows : 5}
+        size={size}
+      />
     </View>
   );
 }
 
 export function GearArt({ itemId, size = 64 }: { itemId: string; size?: number }) {
+  const globalIndex = gearIndexes[itemId] ?? 0;
   return (
     <View style={styles.rounded}>
-      <GridSprite source={gearSheet} index={gearIndexes[itemId] ?? 0} columns={4} size={size} />
+      <GridSprite
+        source={globalIndex < 16 ? apparelGearSheet : tackleGearSheet}
+        index={globalIndex % 16}
+        columns={4}
+        size={size}
+      />
     </View>
   );
 }
@@ -89,22 +137,26 @@ function ResponsiveCrop({ source, index, columns, height }: {
   );
 }
 
-export function AquariumHero({ height = 180 }: { height?: number }) {
-  return <ImageBackground source={aquariumBackground} resizeMode="cover" style={[styles.aquarium, { height }]} />;
+export function AquariumHero({ habitat = "pond", deepSea = false, height = 180, rounded = true }: {
+  habitat?: Habitat;
+  deepSea?: boolean;
+  height?: number;
+  rounded?: boolean;
+}) {
+  return <ImageBackground source={aquariumBackground[deepSea ? "deepsea" : habitat]} resizeMode="cover" style={[styles.aquarium, !rounded && styles.square, { height }]} />;
 }
 
 export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?: number }) {
-  const safeStage = Math.max(0, Math.min(3, stage));
+  const safeStage = Math.max(0, Math.min(4, stage));
+  const frameWidth = height * ANGLER_ASPECT_RATIO;
   return (
-    <View style={[styles.angler, { height, width: height * 0.72 }]}>
+    <View style={[styles.angler, { height, width: frameWidth }]}>
       <Image
-        source={anglerOutfits}
-        resizeMode="stretch"
+        source={anglerOutfits[safeStage]}
+        resizeMode="contain"
         style={{
-          position: "absolute",
           height,
-          width: height * 0.72 * 4,
-          left: -safeStage * height * 0.72,
+          width: frameWidth,
         }}
       />
     </View>
@@ -116,5 +168,6 @@ const styles = StyleSheet.create({
   locked: { opacity: 0.22 },
   crop: { width: "100%", borderRadius: 16, overflow: "hidden", backgroundColor: "#DDF6F6" },
   aquarium: { width: "100%", borderRadius: 18, overflow: "hidden" },
+  square: { borderRadius: 0 },
   angler: { overflow: "hidden", borderRadius: 15, backgroundColor: "#DDF6F6" },
 });

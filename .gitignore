@@ -4,6 +4,10 @@ android/
 ios/
 dist/
 dist-android/
+dist-android-check/
+dist-health-check/
+dist-map-outfit-check/
+dist-route-check/
 *.jks
 *.keystore
 *.apk

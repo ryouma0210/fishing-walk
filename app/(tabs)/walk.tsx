@@ -1,150 +1,118 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Pedometer } from "expo-sensors";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Card, Header, Screen, ui } from "../../src/components/ui";
+import { FISH } from "../../src/constants/game";
+import { CatchSummary, getCatchStats, getCatchSummaries, getWalkPoints } from "../../src/database/db";
+import { syncTodaySteps } from "../../src/services/stepService";
 import { colors } from "../../src/constants/theme";
-import { getStepsForMonth, saveSteps } from "../../src/database/db";
+import { getDailyMissions } from "../../src/services/dailyService";
 
-const dayKey = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-
-export default function WalkScreen() {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [today, setToday] = useState(0);
-  const [days, setDays] = useState<{ day: string; steps: number }[]>([]);
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const [status, setStatus] = useState("歩数データを確認中");
-  const baseSteps = useRef(0);
-
-  const loadMonth = useCallback(async () => {
-    setDays(await getStepsForMonth(year, month));
-  }, [month, year]);
-
-  const syncToday = useCallback(async () => {
-    const current = new Date();
-    const start = new Date(current);
-    start.setHours(0, 0, 0, 0);
-    try {
-      const supported = await Pedometer.isAvailableAsync();
-      setAvailable(supported);
-      if (!supported) {
-        setStatus("この端末では歩数センサーを利用できません");
-        return;
-      }
-      const result = await Pedometer.getStepCountAsync(start, current);
-      baseSteps.current = result.steps;
-      setToday(result.steps);
-      await saveSteps(dayKey(current), result.steps);
-      setStatus("端末の歩数データと同期しました");
-    } catch {
-      setAvailable(false);
-      setStatus("モーション権限を確認してください");
-    }
-  }, []);
+export default function MyPage() {
+  const router = useRouter();
+  const [stats, setStats] = useState({ count: 0, unique_count: 0, largest: 0 });
+  const [rows, setRows] = useState<CatchSummary[]>([]);
+  const [steps, setSteps] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [daily, setDaily] = useState({ completed: 0, total: 3, claimable: 0 });
 
   useFocusEffect(useCallback(() => {
-    syncToday().then(loadMonth);
-  }, [loadMonth, syncToday]));
-
-  useEffect(() => {
-    const subscription = Pedometer.watchStepCount(async (result) => {
-      const total = baseSteps.current + result.steps;
-      setToday(total);
-      await saveSteps(dayKey(new Date()), total);
+    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints()]).then(async ([catchStats, catches, today, wallet]) => {
+      setStats(catchStats);
+      setRows(catches);
+      setSteps(today.steps);
+      setPoints(wallet);
+      const missions = await getDailyMissions();
+      setDaily({ completed: missions.filter((mission) => mission.claimed).length, total: missions.length, claimable: missions.filter((mission) => !mission.claimed && mission.current >= mission.target).length });
     });
-    return () => subscription.remove();
-  }, []);
+  }, []));
 
-  const changeMonth = (delta: number) => {
-    const date = new Date(year, month - 1 + delta, 1);
-    setYear(date.getFullYear());
-    setMonth(date.getMonth() + 1);
-  };
-  const dayCount = new Date(year, month, 0).getDate();
-  const values = Array.from({ length: dayCount }, (_, index) => {
-    const key = `${year}-${String(month).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`;
-    return { day: index + 1, steps: days.find((entry) => entry.day === key)?.steps ?? 0 };
-  });
-  const total = values.reduce((sum, item) => sum + item.steps, 0);
-  const activeDays = values.filter((item) => item.steps > 0).length;
-  const average = activeDays ? Math.round(total / activeDays) : 0;
-  const best = values.reduce((highest, item) => item.steps > highest.steps ? item : highest, { day: 0, steps: 0 });
-  const max = Math.max(10000, ...values.map((item) => item.steps));
+  const titles = [
+    { name: "はじめての一歩", unlocked: steps >= 1000 },
+    { name: "魚博士", unlocked: rows.length >= 20 },
+    { name: "大物ハンター", unlocked: stats.largest >= 100 },
+    { name: "水族館マスター", unlocked: rows.length === FISH.length },
+  ];
+  const unlockedTitles = titles.filter((title) => title.unlocked).length;
 
   return (
     <Screen>
-      <Header title="Walk Report" sub={status} />
-      <Card>
-        <View style={ui.between}>
-          <View>
-            <Text style={ui.muted}>今日の歩数</Text>
-            <Text style={ui.metric}>{today.toLocaleString()} <Text style={styles.unit}>歩</Text></Text>
-          </View>
-          <View style={[styles.sensorBadge, { backgroundColor: available ? colors.foam : "#FDECEC" }]}>
-            <Text style={{ color: available ? colors.ocean : colors.danger, fontWeight: "800" }}>
-              {available ? "センサー接続" : "未接続"}
-            </Text>
-          </View>
+      <Header title="My Page" sub="歩数・釣果・称号・設定" />
+      <Card style={styles.profile}>
+        <View style={styles.avatar}><Text style={styles.avatarText}>🎣</Text></View>
+        <View style={styles.profileInfo}>
+          <Text style={styles.playerName}>Fishing Walker</Text>
+          <Text style={ui.muted}>今日 {steps.toLocaleString()}歩 · {points.toLocaleString()}pt</Text>
+          <Text style={styles.titleText}>称号 {unlockedTitles}/{titles.length}</Text>
         </View>
-        <View style={styles.track}><View style={[styles.progress, { width: `${Math.min(100, today / 100)}%` }]} /></View>
-        <Text style={ui.muted}>目標 10,000歩 ・ 達成率 {Math.min(100, Math.round(today / 100))}%</Text>
       </Card>
 
       <Card>
-        <View style={ui.between}>
-          <Pressable onPress={() => changeMonth(-1)} style={styles.monthButton}><Text>‹</Text></Pressable>
-          <Text style={ui.h2}>{year}年 {month}月</Text>
-          <Pressable onPress={() => changeMonth(1)} style={styles.monthButton}><Text>›</Text></Pressable>
-        </View>
+        <Text style={ui.h2}>釣り記録</Text>
         <View style={styles.stats}>
-          <View style={styles.stat}><Text style={ui.muted}>合計</Text><Text style={styles.statValue}>{total.toLocaleString()}</Text></View>
-          <View style={styles.stat}><Text style={ui.muted}>平均</Text><Text style={styles.statValue}>{average.toLocaleString()}</Text></View>
-          <View style={styles.stat}><Text style={ui.muted}>最高</Text><Text style={styles.statValue}>{best.steps.toLocaleString()}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>総釣果</Text><Text style={styles.statValue}>{stats.count.toLocaleString()}匹</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>発見率</Text><Text style={styles.statValue}>{Math.round(rows.length / FISH.length * 100)}%</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>最大サイズ</Text><Text style={styles.statValue}>{stats.largest.toLocaleString()}cm</Text></View>
         </View>
-        <View style={styles.chart}>
-          {values.map((item) => (
-            <View key={item.day} style={styles.barCell}>
-              <View style={[styles.bar, { height: Math.max(2, 92 * item.steps / max) }]} />
-              {(item.day === 1 || item.day % 5 === 0 || item.day === dayCount) && <Text style={styles.label}>{item.day}</Text>}
-            </View>
-          ))}
-        </View>
-        <Text style={ui.muted}>最高記録: {best.day ? `${best.day}日 ${best.steps.toLocaleString()}歩` : "データなし"}</Text>
       </Card>
 
-      <Card>
-        <Text style={ui.h2}>歩数ボーナス</Text>
-        <Text style={ui.body}>1,000歩ごとにレア抽選が強化され、釣り場も順番に解放されます。最大8,000歩で海へ到達します。</Text>
-        <View style={styles.milestones}>
-          {[0, 1500, 4000, 8000].map((step) => (
-            <View key={step} style={[styles.milestone, today >= step && styles.reached]}>
-              <Text style={styles.milestoneText}>{step.toLocaleString()}</Text>
-            </View>
-          ))}
-        </View>
-      </Card>
+      <View style={styles.menu}>
+        <Pressable onPress={() => router.push("/walk-report")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>👣</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>歩数</Text><Text style={styles.menuSub}>グラフ・カレンダー・再同期</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/daily")} style={[styles.menuItem, daily.claimable > 0 && styles.dailyReady]}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🎁</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>デイリー</Text><Text style={styles.menuSub}>{daily.claimable > 0 ? `${daily.claimable}個の報酬を受け取れます` : `${daily.completed}/${daily.total} 報酬受取済み`}</Text></View>
+          {daily.claimable > 0 && <View style={styles.newBadge}><Text style={styles.newBadgeText}>GET</Text></View>}
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/boss-dex")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>👑</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>ヌシ図鑑</Text><Text style={styles.menuSub}>全身イラスト・捕獲日・最大捕獲サイズ</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/titles")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🏅</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>称号</Text><Text style={styles.menuSub}>{unlockedTitles}個の称号を獲得</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/manual")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>📖</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>図解マニュアル</Text><Text style={styles.menuSub}>エリア・釣り・ヌシ戦の遊び方</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/settings")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>⚙️</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>設定</Text><Text style={styles.menuSub}>音・振動・歩数連携・データ管理</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  unit: { fontSize: 16 },
-  sensorBadge: { borderRadius: 99, paddingHorizontal: 10, paddingVertical: 7 },
-  track: { height: 10, borderRadius: 8, backgroundColor: colors.line, overflow: "hidden", marginVertical: 8 },
-  progress: { height: "100%", backgroundColor: colors.aqua },
-  monthButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.foam, alignItems: "center", justifyContent: "center" },
-  stats: { flexDirection: "row", gap: 8, marginTop: 14 },
-  stat: { flex: 1, alignItems: "center", backgroundColor: colors.foam, padding: 9, borderRadius: 12 },
-  statValue: { fontWeight: "900", color: colors.navy, fontSize: 15 },
-  chart: { height: 122, flexDirection: "row", alignItems: "flex-end", gap: 1, marginTop: 14 },
-  barCell: { flex: 1, height: 112, alignItems: "center", justifyContent: "flex-end" },
-  bar: { width: "82%", backgroundColor: colors.aqua, borderRadius: 3 },
-  label: { fontSize: 7, color: colors.muted, height: 12 },
-  milestones: { flexDirection: "row", gap: 6, marginTop: 12 },
-  milestone: { flex: 1, paddingVertical: 7, borderRadius: 9, backgroundColor: colors.line, alignItems: "center" },
-  reached: { backgroundColor: colors.gold },
-  milestoneText: { fontSize: 11, fontWeight: "800", color: colors.ink },
+  profile: { flexDirection: "row", alignItems: "center", gap: 14 },
+  avatar: { width: 70, height: 70, borderRadius: 35, alignItems: "center", justifyContent: "center", backgroundColor: colors.foam, borderWidth: 2, borderColor: colors.aqua },
+  avatarText: { fontSize: 35 },
+  profileInfo: { flex: 1 },
+  playerName: { color: colors.navy, fontSize: 20, fontWeight: "900" },
+  titleText: { color: colors.coral, fontSize: 11, fontWeight: "900", marginTop: 4 },
+  stats: { flexDirection: "row", gap: 7, marginTop: 12 },
+  stat: { flex: 1, minHeight: 75, alignItems: "center", justifyContent: "center", padding: 7, borderRadius: 13, backgroundColor: colors.foam },
+  statLabel: { color: colors.muted, fontSize: 10, textAlign: "center" },
+  statValue: { color: colors.navy, fontSize: 16, fontWeight: "900", textAlign: "center", marginTop: 4 },
+  menu: { gap: 9 },
+  menuItem: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
+  dailyReady: { borderColor: colors.gold, backgroundColor: "#FFF9E5" },
+  newBadge: { borderRadius: 99, paddingHorizontal: 7, paddingVertical: 4, backgroundColor: colors.coral },
+  newBadgeText: { color: colors.white, fontSize: 8, fontWeight: "900" },
+  menuIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.foam },
+  menuEmoji: { fontSize: 25 },
+  menuBody: { flex: 1 },
+  menuTitle: { color: colors.ink, fontSize: 17, fontWeight: "900" },
+  menuSub: { color: colors.muted, fontSize: 11, marginTop: 3 },
+  chevron: { color: colors.ocean, fontSize: 30, fontWeight: "400" },
 });

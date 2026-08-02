@@ -10,13 +10,24 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      "expo-font",
+      "expo-health-connect",
       [
-        "expo-location",
+        "@kingstinct/react-native-healthkit",
         {
-          "locationWhenInUsePermission": "現在地と近くの釣り場を地図に表示するため、位置情報を使用します。"
+          "NSHealthShareUsageDescription": "今日と月間の歩数を表示し、釣りゲームの歩数ポイントへ反映するために使用します。",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
         }
       ],
-      "expo-font"
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": false,
@@ -32,9 +43,7 @@
         "backgroundColor": "#063B4C"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACTIVITY_RECOGNITION"
+        "android.permission.health.READ_STEPS"
       ]
     },
     "extra": {

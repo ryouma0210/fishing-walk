@@ -16,7 +16,24 @@ export type InventoryRow = {
   purchased_at: string;
 };
 
+export type CatchHistoryRow = {
+  id: number;
+  fish_id: string;
+  size_cm: number;
+  caught_at: string;
+  spot_name: string | null;
+  habitat: string | null;
+  is_personal_best: number;
+};
+
+export type AquariumPreference = {
+  fish_id: string;
+  favorite: number;
+  visible: number;
+};
+
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+const STG_TEST_POINTS = process.env.EXPO_PUBLIC_APP_ENV === "stg" ? 9999 : 0;
 
 export async function db() {
   if (!dbPromise) {
@@ -57,10 +74,32 @@ export async function db() {
           source TEXT NOT NULL DEFAULT 'pedometer',
           updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS point_spends (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id TEXT NOT NULL UNIQUE,
+          points INTEGER NOT NULL CHECK(points >= 0),
+          spent_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS consumable_spends (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          item_id TEXT NOT NULL,
+          points INTEGER NOT NULL CHECK(points >= 0),
+          spent_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS bait_inventory (
+          item_id TEXT PRIMARY KEY,
+          quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+          selected INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
           updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS aquarium_preferences (
+          fish_id TEXT PRIMARY KEY,
+          favorite INTEGER NOT NULL DEFAULT 0,
+          visible INTEGER NOT NULL DEFAULT 1
         );
         INSERT OR IGNORE INTO schema_migrations(version) VALUES(2);
       `);
@@ -86,9 +125,17 @@ async function ensureCatchColumns(database: SQLite.SQLiteDatabase) {
   }
 }
 
-export async function getCoins() {
-  const row = await (await db()).getFirstAsync<{ coins: number }>("SELECT coins FROM wallet WHERE id=1");
-  return row?.coins ?? 0;
+export async function getWalkPoints() {
+  const database = await db();
+  const earned = await database.getFirstAsync<{ points: number }>(
+    "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+  );
+  const spent = await database.getFirstAsync<{ points: number }>(
+    `SELECT
+      COALESCE((SELECT SUM(points) FROM point_spends),0)
+      + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+  );
+  return Math.max(0, STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0));
 }
 
 export async function saveCatch(input: {
@@ -96,7 +143,6 @@ export async function saveCatch(input: {
   size: number;
   rank: string;
   aquarium: string;
-  coins: number;
   spotId: string;
   spotName: string;
   habitat: string;
@@ -112,12 +158,11 @@ export async function saveCatch(input: {
     await database.runAsync(
       `INSERT INTO catches(
         fish_id,size_cm,rank,aquarium,coins,caught_at,spot_id,spot_name,habitat,steps_at_catch,is_personal_best
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-      input.fishId, input.size, input.rank, input.aquarium, input.coins,
+      ) VALUES(?,?,?,?,0,?,?,?,?,?,?)`,
+      input.fishId, input.size, input.rank, input.aquarium,
       new Date().toISOString(), input.spotId, input.spotName, input.habitat,
       input.steps, isPersonalBest ? 1 : 0,
     );
-    await database.runAsync("UPDATE wallet SET coins=coins+? WHERE id=1", input.coins);
   });
   return isPersonalBest;
 }
@@ -140,6 +185,48 @@ export async function getCatchStats() {
   return totals ?? { count: 0, unique_count: 0, largest: 0 };
 }
 
+export async function getCatchHistory() {
+  return (await db()).getAllAsync<CatchHistoryRow>(`
+    SELECT id,fish_id,size_cm,caught_at,spot_name,habitat,is_personal_best
+    FROM catches ORDER BY caught_at DESC
+  `);
+}
+
+export async function getAquariumPreferences() {
+  return (await db()).getAllAsync<AquariumPreference>(
+    "SELECT fish_id,favorite,visible FROM aquarium_preferences",
+  );
+}
+
+export async function setAquariumFavorite(fishId: string, favorite: boolean) {
+  await (await db()).runAsync(
+    `INSERT INTO aquarium_preferences(fish_id,favorite,visible) VALUES(?,?,1)
+     ON CONFLICT(fish_id) DO UPDATE SET favorite=excluded.favorite`,
+    fishId, favorite ? 1 : 0,
+  );
+}
+
+export async function setAquariumVisible(fishId: string, visible: boolean) {
+  await (await db()).runAsync(
+    `INSERT INTO aquarium_preferences(fish_id,favorite,visible) VALUES(?,0,?)
+     ON CONFLICT(fish_id) DO UPDATE SET visible=excluded.visible`,
+    fishId, visible ? 1 : 0,
+  );
+}
+
+export async function exportDatabaseBytes() {
+  return (await db()).serializeAsync();
+}
+
+export async function restoreDatabaseBytes(bytes: Uint8Array) {
+  const source = await SQLite.deserializeDatabaseAsync(bytes);
+  try {
+    await SQLite.backupDatabaseAsync({ sourceDatabase: source, destDatabase: await db() });
+  } finally {
+    await source.closeAsync();
+  }
+}
+
 export async function buyItem(itemId: string, cost: number) {
   const database = await db();
   let result: "ok" | "owned" | "insufficient" = "insufficient";
@@ -149,17 +236,133 @@ export async function buyItem(itemId: string, cost: number) {
       result = "owned";
       return;
     }
-    const wallet = await database.getFirstAsync<{ coins: number }>("SELECT coins FROM wallet WHERE id=1");
-    if ((wallet?.coins ?? 0) < cost) return;
-    await database.runAsync("UPDATE wallet SET coins=coins-? WHERE id=1", cost);
+    const earned = await database.getFirstAsync<{ points: number }>(
+      "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+    );
+    const spent = await database.getFirstAsync<{ points: number }>(
+      `SELECT
+        COALESCE((SELECT SUM(points) FROM point_spends),0)
+        + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+    );
+    if (STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
     await database.runAsync(
       "INSERT INTO inventory(item_id,equipped,purchased_at) VALUES(?,0,?)",
       itemId,
       new Date().toISOString(),
     );
+    await database.runAsync(
+      "INSERT INTO point_spends(item_id,points,spent_at) VALUES(?,?,?)",
+      itemId,
+      cost,
+      new Date().toISOString(),
+    );
     result = "ok";
   });
   return result;
+}
+
+export async function buyBait(itemId: string, unitCost: number, quantity = 1) {
+  const safeQuantity = Math.max(1, Math.min(10, Math.floor(quantity)));
+  const cost = unitCost * safeQuantity;
+  const database = await db();
+  let ok = false;
+  await database.withTransactionAsync(async () => {
+    const earned = await database.getFirstAsync<{ points: number }>(
+      "SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days",
+    );
+    const spent = await database.getFirstAsync<{ points: number }>(
+      `SELECT
+        COALESCE((SELECT SUM(points) FROM point_spends),0)
+        + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`,
+    );
+    if (STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
+    await database.runAsync(
+      "INSERT INTO consumable_spends(item_id,points,spent_at) VALUES(?,?,?)",
+      itemId, cost, new Date().toISOString(),
+    );
+    await database.runAsync(
+      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,?,0)
+       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+excluded.quantity`,
+      itemId, safeQuantity,
+    );
+    const selected = await database.getFirstAsync("SELECT 1 FROM bait_inventory WHERE selected=1 AND quantity>0");
+    if (!selected) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", itemId);
+    ok = true;
+  });
+  return ok;
+}
+
+export async function getBaitInventory() {
+  return (await db()).getAllAsync<{ item_id: string; quantity: number; selected: number }>(
+    "SELECT item_id,quantity,selected FROM bait_inventory",
+  );
+}
+
+export async function selectBait(itemId: string) {
+  const database = await db();
+  await database.withTransactionAsync(async () => {
+    await database.runAsync("UPDATE bait_inventory SET selected=0");
+    await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=? AND quantity>0", itemId);
+  });
+}
+
+export async function getSelectedBait() {
+  return (await db()).getFirstAsync<{ item_id: string; quantity: number }>(
+    "SELECT item_id,quantity FROM bait_inventory WHERE selected=1 AND quantity>0",
+  );
+}
+
+export async function consumeSelectedBait() {
+  const database = await db();
+  let itemId: string | null = null;
+  await database.withTransactionAsync(async () => {
+    const selected = await database.getFirstAsync<{ item_id: string; quantity: number }>(
+      "SELECT item_id,quantity FROM bait_inventory WHERE selected=1 AND quantity>0",
+    );
+    if (!selected) return;
+    itemId = selected.item_id;
+    await database.runAsync("UPDATE bait_inventory SET quantity=quantity-1 WHERE item_id=?", selected.item_id);
+    if (selected.quantity <= 1) {
+      await database.runAsync("UPDATE bait_inventory SET selected=0 WHERE item_id=?", selected.item_id);
+      const next = await database.getFirstAsync<{ item_id: string }>(
+        "SELECT item_id FROM bait_inventory WHERE quantity>0 ORDER BY item_id LIMIT 1",
+      );
+      if (next) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", next.item_id);
+    }
+  });
+  return itemId;
+}
+
+export async function getTodayCatchCount(dayPrefix: string) {
+  const row = await (await db()).getFirstAsync<{ count: number }>(
+    "SELECT COUNT(*) count FROM catches WHERE caught_at LIKE ?",
+    `${dayPrefix}%`,
+  );
+  return row?.count ?? 0;
+}
+
+export async function getTodayCatchProgress(dayPrefix: string) {
+  const row = await (await db()).getFirstAsync<{ count: number; high_rank_count: number }>(
+    `SELECT COUNT(*) count,
+      COALESCE(SUM(CASE WHEN rank IN ('B','A','S','SS','SSS') THEN 1 ELSE 0 END),0) high_rank_count
+     FROM catches WHERE caught_at LIKE ?`,
+    `${dayPrefix}%`,
+  );
+  return row ?? { count: 0, high_rank_count: 0 };
+}
+
+export async function grantBait(itemId: string, quantity = 1) {
+  const safeQuantity = Math.max(1, Math.floor(quantity));
+  const database = await db();
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,?,0)
+       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+excluded.quantity`,
+      itemId, safeQuantity,
+    );
+    const selected = await database.getFirstAsync("SELECT 1 FROM bait_inventory WHERE selected=1 AND quantity>0");
+    if (!selected) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", itemId);
+  });
 }
 
 export async function equipItem(itemId: string, kind: GearKind) {
@@ -185,6 +388,37 @@ export async function unequipKind(kind: GearKind) {
   );
 }
 
+export async function equipOutfitSet(stage: number) {
+  const safeStage = Math.max(1, Math.min(4, Math.floor(stage)));
+  const itemIds = [`hat${safeStage}`, `top${safeStage}`, `bottom${safeStage}`, `shoes${safeStage}`];
+  const database = await db();
+  const owned = await database.getAllAsync<{ item_id: string }>(
+    `SELECT item_id FROM inventory WHERE item_id IN (${itemIds.map(() => "?").join(",")})`,
+    ...itemIds,
+  );
+  if (owned.length !== itemIds.length) return false;
+  const apparelIds = SHOP.filter((item) => ["hat", "top", "bottom", "shoes"].includes(item.kind)).map((item) => item.id);
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `UPDATE inventory SET equipped=0 WHERE item_id IN (${apparelIds.map(() => "?").join(",")})`,
+      ...apparelIds,
+    );
+    await database.runAsync(
+      `UPDATE inventory SET equipped=1 WHERE item_id IN (${itemIds.map(() => "?").join(",")})`,
+      ...itemIds,
+    );
+  });
+  return true;
+}
+
+export async function unequipOutfit() {
+  const apparelIds = SHOP.filter((item) => ["hat", "top", "bottom", "shoes"].includes(item.kind)).map((item) => item.id);
+  await (await db()).runAsync(
+    `UPDATE inventory SET equipped=0 WHERE item_id IN (${apparelIds.map(() => "?").join(",")})`,
+    ...apparelIds,
+  );
+}
+
 export async function getInventory() {
   return (await db()).getAllAsync<InventoryRow>("SELECT item_id,equipped,purchased_at FROM inventory");
 }
@@ -200,7 +434,7 @@ export async function saveSteps(day: string, steps: number, source = "pedometer"
   await (await db()).runAsync(
     `INSERT INTO step_days(day,steps,source,updated_at) VALUES(?,?,?,?)
      ON CONFLICT(day) DO UPDATE SET
-       steps=MAX(step_days.steps,excluded.steps),
+       steps=excluded.steps,
        source=excluded.source,
        updated_at=excluded.updated_at`,
     day,
