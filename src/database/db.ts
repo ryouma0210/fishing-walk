@@ -341,6 +341,30 @@ export async function getTodayCatchCount(dayPrefix: string) {
   return row?.count ?? 0;
 }
 
+export async function getTodayCatchProgress(dayPrefix: string) {
+  const row = await (await db()).getFirstAsync<{ count: number; high_rank_count: number }>(
+    `SELECT COUNT(*) count,
+      COALESCE(SUM(CASE WHEN rank IN ('B','A','S','SS','SSS') THEN 1 ELSE 0 END),0) high_rank_count
+     FROM catches WHERE caught_at LIKE ?`,
+    `${dayPrefix}%`,
+  );
+  return row ?? { count: 0, high_rank_count: 0 };
+}
+
+export async function grantBait(itemId: string, quantity = 1) {
+  const safeQuantity = Math.max(1, Math.floor(quantity));
+  const database = await db();
+  await database.withTransactionAsync(async () => {
+    await database.runAsync(
+      `INSERT INTO bait_inventory(item_id,quantity,selected) VALUES(?,?,0)
+       ON CONFLICT(item_id) DO UPDATE SET quantity=quantity+excluded.quantity`,
+      itemId, safeQuantity,
+    );
+    const selected = await database.getFirstAsync("SELECT 1 FROM bait_inventory WHERE selected=1 AND quantity>0");
+    if (!selected) await database.runAsync("UPDATE bait_inventory SET selected=1 WHERE item_id=?", itemId);
+  });
+}
+
 export async function equipItem(itemId: string, kind: GearKind) {
   const kindIds = SHOP.filter((item) => item.kind === kind).map((item) => item.id);
   const database = await db();

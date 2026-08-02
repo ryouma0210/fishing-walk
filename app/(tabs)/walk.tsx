@@ -6,6 +6,7 @@ import { FISH } from "../../src/constants/game";
 import { CatchSummary, getCatchStats, getCatchSummaries, getWalkPoints } from "../../src/database/db";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { colors } from "../../src/constants/theme";
+import { getDailyMissions } from "../../src/services/dailyService";
 
 export default function MyPage() {
   const router = useRouter();
@@ -13,13 +14,16 @@ export default function MyPage() {
   const [rows, setRows] = useState<CatchSummary[]>([]);
   const [steps, setSteps] = useState(0);
   const [points, setPoints] = useState(0);
+  const [daily, setDaily] = useState({ completed: 0, total: 3, claimable: 0 });
 
   useFocusEffect(useCallback(() => {
-    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints()]).then(([catchStats, catches, today, wallet]) => {
+    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints()]).then(async ([catchStats, catches, today, wallet]) => {
       setStats(catchStats);
       setRows(catches);
       setSteps(today.steps);
       setPoints(wallet);
+      const missions = await getDailyMissions();
+      setDaily({ completed: missions.filter((mission) => mission.claimed).length, total: missions.length, claimable: missions.filter((mission) => !mission.claimed && mission.current >= mission.target).length });
     });
   }, []));
 
@@ -58,9 +62,20 @@ export default function MyPage() {
           <View style={styles.menuBody}><Text style={styles.menuTitle}>歩数</Text><Text style={styles.menuSub}>グラフ・カレンダー・再同期</Text></View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+        <Pressable onPress={() => router.push("/daily")} style={[styles.menuItem, daily.claimable > 0 && styles.dailyReady]}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🎁</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>デイリー</Text><Text style={styles.menuSub}>{daily.claimable > 0 ? `${daily.claimable}個の報酬を受け取れます` : `${daily.completed}/${daily.total} 報酬受取済み`}</Text></View>
+          {daily.claimable > 0 && <View style={styles.newBadge}><Text style={styles.newBadgeText}>GET</Text></View>}
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
         <Pressable onPress={() => router.push("/titles")} style={styles.menuItem}>
           <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🏅</Text></View>
           <View style={styles.menuBody}><Text style={styles.menuTitle}>称号</Text><Text style={styles.menuSub}>{unlockedTitles}個の称号を獲得</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        <Pressable onPress={() => router.push("/manual")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>📖</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>図解マニュアル</Text><Text style={styles.menuSub}>エリア・釣り・ヌシ戦の遊び方</Text></View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
         <Pressable onPress={() => router.push("/settings")} style={styles.menuItem}>
@@ -86,6 +101,9 @@ const styles = StyleSheet.create({
   statValue: { color: colors.navy, fontSize: 16, fontWeight: "900", textAlign: "center", marginTop: 4 },
   menu: { gap: 9 },
   menuItem: { minHeight: 76, flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
+  dailyReady: { borderColor: colors.gold, backgroundColor: "#FFF9E5" },
+  newBadge: { borderRadius: 99, paddingHorizontal: 7, paddingVertical: 4, backgroundColor: colors.coral },
+  newBadgeText: { color: colors.white, fontSize: 8, fontWeight: "900" },
   menuIcon: { width: 48, height: 48, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: colors.foam },
   menuEmoji: { fontSize: 25 },
   menuBody: { flex: 1 },
