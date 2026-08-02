@@ -14,10 +14,12 @@ const advancedWorldBackground = require("../../assets/game/fishing-area-world-2.
 
 export default function AreaScreen() {
   const router = useRouter();
-  const { height } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [caughtIds, setCaughtIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<FishingArea | null>(null);
+  const [compactHeader, setCompactHeader] = useState(false);
+  const pageHeight = Math.max(820, height + 120);
 
   useFocusEffect(useCallback(() => {
     getCatchSummaries().then((rows) => {
@@ -51,20 +53,42 @@ export default function AreaScreen() {
         style={styles.worldScroll}
         showsVerticalScrollIndicator
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        scrollEventThrottle={32}
+        onScroll={(event) => setCompactHeader(event.nativeEvent.contentOffset.y < pageHeight * 0.72)}
       >
-        {[2, 1].map((chapter) => (
+        {[2, 1].map((chapter) => {
+          const chapterStates = states.filter((state) => state.area.chapter === chapter);
+          return (
           <ImageBackground
             key={chapter}
             source={chapter === 1 ? worldBackground : advancedWorldBackground}
             resizeMode="cover"
-            style={[styles.world, { height: Math.max(820, height + 120) }]}
+            style={[styles.world, { height: pageHeight }]}
           >
             <View style={styles.chapterBadge}>
               <Text style={styles.chapterNumber}>CHAPTER {chapter}</Text>
               <Text style={styles.chapterName}>{chapter === 1 ? "水辺のはじまり" : "幻境への挑戦"}</Text>
             </View>
 
-            {states.filter((state) => state.area.chapter === chapter).map((state) => {
+            {chapterStates.slice(0, -1).map((state, routeIndex) => {
+              const next = chapterStates[routeIndex + 1];
+              const x1 = parseFloat(state.area.node.left) / 100 * width;
+              const y1 = parseFloat(state.area.node.top) / 100 * pageHeight + 29;
+              const x2 = parseFloat(next.area.node.left) / 100 * width;
+              const y2 = parseFloat(next.area.node.top) / 100 * pageHeight + 29;
+              const dx = x2 - x1;
+              const dy = y2 - y1;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+              return <View key={`route-${state.area.id}`} style={[styles.areaRoute, state.cleared && styles.routeCleared, {
+                left: (x1 + x2 - length) / 2,
+                top: (y1 + y2) / 2 - 4,
+                width: length,
+                transform: [{ rotate: `${angle}deg` }],
+              }]} />;
+            })}
+
+            {chapterStates.map((state) => {
               const index = FISHING_AREAS.findIndex((area) => area.id === state.area.id);
               const active = selected?.id === state.area.id;
               return (
@@ -73,7 +97,6 @@ export default function AreaScreen() {
                   onPress={() => setSelected(state.area)}
                   style={[styles.areaNode, { left: state.area.node.left, top: state.area.node.top }, !state.unlocked && styles.lockedNode]}
                 >
-                  {index % 4 < 3 && <View style={[styles.routeStub, state.cleared && styles.routeCleared]} />}
                   <View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.cleared && styles.nodeCleared, active && styles.nodeActive]}>
                     <Text style={styles.nodeEmoji}>{state.unlocked ? state.area.emoji : "🔒"}</Text>
                   </View>
@@ -85,13 +108,34 @@ export default function AreaScreen() {
               );
             })}
           </ImageBackground>
-        ))}
+        );})}
+        {(() => {
+          const upper = states[4];
+          const lower = states[3];
+          if (!upper || !lower) return null;
+          const x1 = parseFloat(upper.area.node.left) / 100 * width;
+          const y1 = parseFloat(upper.area.node.top) / 100 * pageHeight + 29;
+          const x2 = parseFloat(lower.area.node.left) / 100 * width;
+          const y2 = pageHeight + parseFloat(lower.area.node.top) / 100 * pageHeight + 29;
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          return <View pointerEvents="none" style={[styles.areaRoute, styles.chapterRoute, lower.cleared && styles.routeCleared, {
+            left: (x1 + x2 - length) / 2,
+            top: (y1 + y2) / 2 - 4,
+            width: length,
+            transform: [{ rotate: `${angle}deg` }],
+          }]} />;
+        })()}
       </ScrollView>
 
-      <View style={styles.header}>
-        <Text style={styles.title}>Fishing Areas</Text>
-        <Text style={styles.sub}>上へ進み、8つのエリアのヌシに挑もう</Text>
-        <View style={styles.progressRow}>
+      <View style={[styles.header, compactHeader && styles.compactHeader]}>
+        <View style={compactHeader && styles.compactTitleRow}>
+          <Text style={[styles.title, compactHeader && styles.compactTitle]} maxFontSizeMultiplier={1.15}>Fishing Areas</Text>
+          {!compactHeader && <Text style={styles.sub} maxFontSizeMultiplier={1.15}>上へ進み、8つのエリアのヌシに挑もう</Text>}
+        </View>
+        <View style={[styles.progressRow, compactHeader && styles.compactProgress]}>
           {states.map((state) => <View key={state.area.id} style={[styles.progressDot, state.unlocked && styles.progressUnlocked, state.cleared && styles.progressCleared]} />)}
         </View>
       </View>
@@ -144,6 +188,10 @@ const styles = StyleSheet.create({
   worldScroll: { flex: 1, backgroundColor: "#071D38" },
   world: { position: "relative", overflow: "hidden" },
   header: { position: "absolute", zIndex: 20, top: 8, left: 12, right: 12, borderRadius: 18, padding: 12, backgroundColor: "rgba(255,255,255,.94)", shadowColor: colors.navy, shadowOpacity: .18, shadowRadius: 8, elevation: 10 },
+  compactHeader: { flexDirection: "row", alignItems: "center", paddingVertical: 7, paddingHorizontal: 10, borderRadius: 15 },
+  compactTitleRow: { flexShrink: 0 },
+  compactTitle: { fontSize: 16 },
+  compactProgress: { flex: 1, marginTop: 0, marginLeft: 10 },
   title: { color: colors.navy, fontSize: 23, fontWeight: "900" },
   sub: { color: colors.muted, fontSize: 11, marginTop: 2 },
   progressRow: { flexDirection: "row", gap: 7, marginTop: 8 },
@@ -155,7 +203,8 @@ const styles = StyleSheet.create({
   chapterName: { color: colors.white, fontSize: 15, fontWeight: "900", marginTop: 1 },
   areaNode: { position: "absolute", width: 132, marginLeft: -66, alignItems: "center", zIndex: 3 },
   lockedNode: { opacity: .68 },
-  routeStub: { position: "absolute", width: 6, height: 78, top: -55, left: 63, borderRadius: 6, backgroundColor: "rgba(255,255,255,.72)", transform: [{ rotate: "-17deg" }] },
+  areaRoute: { position: "absolute", zIndex: 1, height: 8, borderRadius: 99, backgroundColor: "rgba(255,255,255,.82)", borderWidth: 1, borderColor: "rgba(6,59,76,.22)", shadowColor: "#FFFFFF", shadowOpacity: .7, shadowRadius: 5 },
+  chapterRoute: { zIndex: 2, height: 10, backgroundColor: "rgba(255,255,255,.9)" },
   routeCleared: { backgroundColor: "rgba(245,185,66,.92)" },
   nodeCircle: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center", borderWidth: 4, borderColor: "#9BA9A9", backgroundColor: "rgba(255,255,255,.94)", shadowColor: colors.navy, shadowOpacity: .28, shadowRadius: 7 },
   nodeUnlocked: { borderColor: colors.aqua },
