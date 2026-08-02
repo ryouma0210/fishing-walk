@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../src/components/ui";
 import { colors } from "../src/constants/theme";
@@ -52,6 +52,14 @@ export default function WalkScreen() {
     }
   };
 
+  const openHealthConnect = async () => {
+    try {
+      await Linking.openURL("market://details?id=com.google.android.apps.healthdata");
+    } catch {
+      await Linking.openURL("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata");
+    }
+  };
+
   const changeMonth = (delta: number) => {
     const date = new Date(year, month - 1 + delta, 1);
     setYear(date.getFullYear());
@@ -99,6 +107,10 @@ export default function WalkScreen() {
           <View style={styles.connect}>
             <Text style={ui.body}>アプリを開く前に歩いた分も、端末のヘルスケアから取得します。</Text>
             <Button title="歩数データを連携" onPress={connectHealth} />
+            {Platform.OS === "android" && status.includes("未インストール") && (
+              <Button title="Health Connectをインストール" kind="secondary" onPress={openHealthConnect} />
+            )}
+            <Text style={styles.healthNote}>許可しない場合もアプリは終了せず、保存済みの歩数を表示します。</Text>
           </View>
         )}
         <View style={styles.pointBox}>
@@ -210,4 +222,5 @@ const styles = StyleSheet.create({
   pointLabel: { color: colors.white, fontSize: 12, fontWeight: "700" },
   pointValue: { color: colors.gold, fontSize: 18, fontWeight: "900" },
   connect: { marginTop: 12, gap: 9 },
+  healthNote: { color: colors.muted, fontSize: 10, lineHeight: 15 },
 });

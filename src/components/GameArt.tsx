@@ -7,6 +7,18 @@ const fishSheets: Record<Habitat, number> = {
   lake: require("../../assets/game/fish-lake-transparent.png"),
   sea: require("../../assets/game/fish-sea-transparent.png"),
 };
+const extraFishSheets: Record<Habitat, number> = {
+  pond: require("../../assets/game/fish-pond-extra-transparent.png"),
+  river: require("../../assets/game/fish-river-extra-transparent.png"),
+  lake: require("../../assets/game/fish-lake-extra-transparent.png"),
+  sea: require("../../assets/game/fish-sea-extra-transparent.png"),
+};
+const extraFishGrid: Record<Habitat, { columns: number; rows: number }> = {
+  pond: { columns: 5, rows: 6 },
+  river: { columns: 5, rows: 6 },
+  lake: { columns: 5, rows: 4 },
+  sea: { columns: 5, rows: 4 },
+};
 const apparelGearSheet = require("../../assets/game/gear-apparel-sheet.png");
 const tackleGearSheet = require("../../assets/game/gear-tackle-sheet.png");
 const spotSheet = require("../../assets/game/fishing-spots-sheet.png");
@@ -66,9 +78,17 @@ export function FishArt({ fishId, size = 72, locked = false }: {
   const habitat = fish.habitats[0];
   const habitatFish = FISH.filter((entry) => entry.habitats[0] === habitat);
   const index = habitatFish.findIndex((entry) => entry.id === fishId);
+  const isExtra = index >= 20;
+  const grid = extraFishGrid[habitat];
   return (
     <View style={locked && styles.locked}>
-      <GridSprite source={fishSheets[habitat]} index={Math.max(0, index)} columns={4} rows={5} size={size} />
+      <GridSprite
+        source={isExtra ? extraFishSheets[habitat] : fishSheets[habitat]}
+        index={Math.max(0, isExtra ? index - 20 : index)}
+        columns={isExtra ? grid.columns : 4}
+        rows={isExtra ? grid.rows : 5}
+        size={size}
+      />
     </View>
   );
 }

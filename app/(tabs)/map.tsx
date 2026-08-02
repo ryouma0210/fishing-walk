@@ -4,13 +4,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button } from "../../src/components/ui";
 import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
-import { FISH } from "../../src/constants/game";
 import { getCatchSummaries } from "../../src/database/db";
 import { selectArea } from "../../src/services/areaService";
 import { colors, rankColors } from "../../src/constants/theme";
 
 const worldBackground = require("../../assets/game/fishing-area-world.png");
 const advancedWorldBackground = require("../../assets/game/fishing-area-world-2.png");
+const CHAPTERS = [5, 4, 3, 2, 1];
+const CHAPTER_NAMES: Record<number, string> = {
+  1: "水辺のはじまり", 2: "幻境への挑戦", 3: "未知なる水域", 4: "極限の世界", 5: "天界のヌシ",
+};
 
 export default function AreaScreen() {
   const router = useRouter();
@@ -34,8 +37,8 @@ export default function AreaScreen() {
       area,
       unlocked: index === 0 || caughtIds.has(previous.bossFishId),
       cleared: caughtIds.has(area.bossFishId),
-      discovered: FISH.filter((fish) => fish.habitats.includes(area.habitat) && caughtIds.has(fish.id)).length,
-      total: FISH.filter((fish) => fish.habitats.includes(area.habitat)).length,
+      discovered: area.fishIds.filter((fishId) => caughtIds.has(fishId)).length,
+      total: area.fishIds.length,
     };
   }), [caughtIds]);
   const selectedState = selected ? states.find((state) => state.area.id === selected.id) ?? null : null;
@@ -56,18 +59,18 @@ export default function AreaScreen() {
         scrollEventThrottle={32}
         onScroll={(event) => setCompactHeader(event.nativeEvent.contentOffset.y < pageHeight * 0.72)}
       >
-        {[2, 1].map((chapter) => {
+        {CHAPTERS.map((chapter) => {
           const chapterStates = states.filter((state) => state.area.chapter === chapter);
           return (
           <ImageBackground
             key={chapter}
-            source={chapter === 1 ? worldBackground : advancedWorldBackground}
+            source={chapter % 2 === 1 ? worldBackground : advancedWorldBackground}
             resizeMode="cover"
             style={[styles.world, { height: pageHeight }]}
           >
             <View style={styles.chapterBadge}>
               <Text style={styles.chapterNumber}>CHAPTER {chapter}</Text>
-              <Text style={styles.chapterName}>{chapter === 1 ? "水辺のはじまり" : "幻境への挑戦"}</Text>
+              <Text style={styles.chapterName}>{CHAPTER_NAMES[chapter]}</Text>
             </View>
 
             {chapterStates.slice(0, -1).map((state, routeIndex) => {
@@ -109,31 +112,32 @@ export default function AreaScreen() {
             })}
           </ImageBackground>
         );})}
-        {(() => {
-          const upper = states[4];
-          const lower = states[3];
+        {[1, 2, 3, 4].map((lowerChapter) => {
+          const upper = states.find((state) => state.area.chapter === lowerChapter + 1);
+          const lowerAreas = states.filter((state) => state.area.chapter === lowerChapter);
+          const lower = lowerAreas[lowerAreas.length - 1];
           if (!upper || !lower) return null;
           const x1 = parseFloat(upper.area.node.left) / 100 * width;
-          const y1 = parseFloat(upper.area.node.top) / 100 * pageHeight + 29;
+          const y1 = (5 - upper.area.chapter) * pageHeight + parseFloat(upper.area.node.top) / 100 * pageHeight + 29;
           const x2 = parseFloat(lower.area.node.left) / 100 * width;
-          const y2 = pageHeight + parseFloat(lower.area.node.top) / 100 * pageHeight + 29;
+          const y2 = (5 - lower.area.chapter) * pageHeight + parseFloat(lower.area.node.top) / 100 * pageHeight + 29;
           const dx = x2 - x1;
           const dy = y2 - y1;
           const length = Math.sqrt(dx * dx + dy * dy);
           const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-          return <View pointerEvents="none" style={[styles.areaRoute, styles.chapterRoute, lower.cleared && styles.routeCleared, {
+          return <View key={`chapter-route-${lowerChapter}`} pointerEvents="none" style={[styles.areaRoute, styles.chapterRoute, lower.cleared && styles.routeCleared, {
             left: (x1 + x2 - length) / 2,
             top: (y1 + y2) / 2 - 4,
             width: length,
             transform: [{ rotate: `${angle}deg` }],
           }]} />;
-        })()}
+        })}
       </ScrollView>
 
       <View style={[styles.header, compactHeader && styles.compactHeader]}>
         <View style={compactHeader && styles.compactTitleRow}>
           <Text style={[styles.title, compactHeader && styles.compactTitle]} maxFontSizeMultiplier={1.15}>Fishing Areas</Text>
-          {!compactHeader && <Text style={styles.sub} maxFontSizeMultiplier={1.15}>上へ進み、8つのエリアのヌシに挑もう</Text>}
+          {!compactHeader && <Text style={styles.sub} maxFontSizeMultiplier={1.15}>上へ進み、18のエリアのヌシに挑もう</Text>}
         </View>
         <View style={[styles.progressRow, compactHeader && styles.compactProgress]}>
           {states.map((state) => <View key={state.area.id} style={[styles.progressDot, state.unlocked && styles.progressUnlocked, state.cleared && styles.progressCleared]} />)}
@@ -161,17 +165,20 @@ export default function AreaScreen() {
               </View>
 
               <View style={styles.discoveryRow}>
-                <Text style={styles.discoveryLabel}>このエリアの発見数</Text>
-                <Text style={styles.discoveryValue}>{selectedState.discovered}<Text style={styles.discoveryTotal}> / {selectedState.total}種</Text></Text>
+                <View><Text style={styles.achievementTitle}>エリア達成状況</Text><Text style={styles.discoveryLabel}>発見した魚</Text></View>
+                <Text style={styles.discoveryValue}>{selectedState.discovered}<Text style={styles.discoveryTotal}> / {selectedState.total}</Text></Text>
               </View>
               <View style={styles.bossBox}>
                 <View>
                   <Text style={styles.bossLabel}>AREA BOSS</Text>
                   <Text style={styles.bossName}>👑 {selected.bossName}</Text>
                 </View>
-                <Text style={styles.bossHint}>{selectedState.cleared ? "ヌシ捕獲済み・何度でも挑戦できます" : selectedState.unlocked ? "SSSランク対応の餌でヌシに挑戦" : "前のエリアのヌシを釣ると解放されます"}</Text>
+                <Text style={styles.bossHint}>{selectedState.cleared ? "ヌシ捕獲済み：はい（何度でも挑戦できます）" : selectedState.unlocked ? "ヌシ捕獲済み：いいえ（SSSランク対応の餌で挑戦）" : "ヌシ捕獲済み：いいえ（前のエリアのヌシで解放）"}</Text>
               </View>
               <Button title={selectedState.unlocked ? "このエリアで釣る" : "まだこのエリアには入れません"} disabled={!selectedState.unlocked} onPress={enterArea} />
+              <Pressable onPress={() => { setSelected(null); router.push("/boss-dex"); }} style={styles.dexButton}>
+                <Text style={styles.dexButtonText}>ヌシ図鑑を見る</Text>
+              </Pressable>
               <Pressable onPress={() => setSelected(null)} style={styles.cancelButton}>
                 <Text style={styles.cancelText}>キャンセル</Text>
               </Pressable>
@@ -232,6 +239,7 @@ const styles = StyleSheet.create({
   statePillLocked: { backgroundColor: "#879899" },
   statePillText: { color: colors.white, fontSize: 9, fontWeight: "900" },
   discoveryRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", borderRadius: 15, paddingHorizontal: 13, paddingVertical: 10, backgroundColor: "#F3F8F8" },
+  achievementTitle: { color: colors.navy, fontSize: 12, fontWeight: "900", marginBottom: 2 },
   discoveryLabel: { color: colors.muted, fontSize: 11, fontWeight: "700" },
   discoveryValue: { color: colors.navy, fontSize: 21, fontWeight: "900" },
   discoveryTotal: { color: colors.muted, fontSize: 11 },
@@ -239,6 +247,8 @@ const styles = StyleSheet.create({
   bossLabel: { color: rankColors.SSS, fontSize: 9, fontWeight: "900" },
   bossName: { color: colors.navy, fontSize: 14, fontWeight: "900", marginTop: 2 },
   bossHint: { color: colors.muted, fontSize: 9, marginTop: 2 },
+  dexButton: { alignItems: "center", borderRadius: 14, paddingVertical: 10, borderWidth: 1, borderColor: colors.aqua, backgroundColor: colors.white },
+  dexButtonText: { color: colors.ocean, fontSize: 12, fontWeight: "900" },
   cancelButton: { alignItems: "center", paddingVertical: 5 },
   cancelText: { color: colors.muted, fontSize: 13, fontWeight: "800" },
 });
