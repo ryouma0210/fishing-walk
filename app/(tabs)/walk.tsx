@@ -68,6 +68,11 @@ export default function MyPage() {
           {daily.claimable > 0 && <View style={styles.newBadge}><Text style={styles.newBadgeText}>GET</Text></View>}
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+        <Pressable onPress={() => router.push("/boss-dex")} style={styles.menuItem}>
+          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>👑</Text></View>
+          <View style={styles.menuBody}><Text style={styles.menuTitle}>ヌシ図鑑</Text><Text style={styles.menuSub}>全身イラスト・捕獲日・最大捕獲サイズ</Text></View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
         <Pressable onPress={() => router.push("/titles")} style={styles.menuItem}>
           <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🏅</Text></View>
           <View style={styles.menuBody}><Text style={styles.menuTitle}>称号</Text><Text style={styles.menuSub}>{unlockedTitles}個の称号を獲得</Text></View>

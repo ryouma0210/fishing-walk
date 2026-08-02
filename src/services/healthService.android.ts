@@ -20,14 +20,22 @@ async function isGranted() {
   return permissions.some((item) => item.accessType === "read" && item.recordType === "Steps");
 }
 
-async function prepare() {
-  if (await getSdkStatus() !== SdkAvailabilityStatus.SDK_AVAILABLE) return false;
-  return initialize();
+type HealthConnectState = "ready" | "install-required" | "update-required" | "native-error";
+
+async function prepare(): Promise<HealthConnectState> {
+  try {
+    const status = await getSdkStatus();
+    if (status === SdkAvailabilityStatus.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) return "update-required";
+    if (status !== SdkAvailabilityStatus.SDK_AVAILABLE) return "install-required";
+    return await initialize() ? "ready" : "native-error";
+  } catch {
+    return "native-error";
+  }
 }
 
 export async function requestHealthAccess() {
   try {
-    if (!(await prepare())) return false;
+    if (await prepare() !== "ready") return false;
     const granted = await requestPermission([STEP_PERMISSION]);
     return granted.some((item) => item.accessType === "read" && item.recordType === "Steps");
   } catch {
@@ -38,8 +46,14 @@ export async function requestHealthAccess() {
 export async function syncHealthMonth(year: number, month: number): Promise<HealthSyncResult> {
   const fallback = await getTodaySteps(dayKey(new Date()));
   try {
-    if (!(await prepare())) {
-      return { permission: "unavailable", provider: "Health Connect", status: "Health Connectを利用できません", today: fallback };
+    const state = await prepare();
+    if (state !== "ready") {
+      const status = state === "install-required"
+        ? "Health Connectが未インストールです。Google Playからインストールしてください"
+        : state === "update-required"
+          ? "Health Connectの更新が必要です。Google Playで更新してください"
+          : "Health Connectを初期化できません。アプリを再起動してください";
+      return { permission: "unavailable", provider: "Health Connect", status, today: fallback };
     }
     if (!(await isGranted())) {
       return { permission: "required", provider: "Health Connect", status: "Health Connectの歩数連携が必要です", today: fallback };
@@ -66,7 +80,7 @@ export async function syncHealthMonth(year: number, month: number): Promise<Heal
     }
     return { permission: "granted", provider: "Health Connect", status: "Health Connectと同期しました", today };
   } catch {
-    return { permission: "required", provider: "Health Connect", status: "Health Connectの権限を確認してください", today: fallback };
+    return { permission: "required", provider: "Health Connect", status: "歩数の読み取りが拒否されました。端末設定から許可できます（保存済み歩数を表示中）", today: fallback };
   }
 }
 

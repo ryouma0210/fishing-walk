@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -7,7 +7,7 @@ import * as Sharing from "expo-sharing";
 import { fromByteArray, toByteArray } from "base64-js";
 import { Button, Card, Header, Screen, ui } from "../src/components/ui";
 import { exportDatabaseBytes, restoreDatabaseBytes } from "../src/database/db";
-import { syncHealthMonth } from "../src/services/healthService";
+import { requestHealthAccess, syncHealthMonth } from "../src/services/healthService";
 import { AppSettings, DEFAULT_SETTINGS, getSettings, saveSettings } from "../src/services/settingsService";
 import { colors } from "../src/constants/theme";
 
@@ -55,6 +55,34 @@ export default function SettingsScreen() {
     setHealthPermission(`${result.provider}：${result.status}`);
     setBusy(false);
     Alert.alert("歩数再同期", result.status);
+  };
+
+  const connectHealth = async () => {
+    setBusy(true);
+    try {
+      const granted = await requestHealthAccess();
+      if (!granted) {
+        const now = new Date();
+        const result = await syncHealthMonth(now.getFullYear(), now.getMonth() + 1);
+        setHealthPermission(`${result.provider}：${result.status}`);
+        Alert.alert("歩数連携", result.status);
+        return;
+      }
+      await resync();
+    } catch {
+      Alert.alert("歩数連携", "権限が拒否されてもアプリ内の保存データは利用できます。端末設定から後で許可できます。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openHealthConnect = async () => {
+    const url = "market://details?id=com.google.android.apps.healthdata";
+    try {
+      await Linking.openURL(url);
+    } catch {
+      await Linking.openURL("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata");
+    }
   };
 
   const exportData = async () => {
@@ -123,7 +151,12 @@ export default function SettingsScreen() {
         <Card>
           <Text style={ui.h2}>歩数・権限</Text>
           <View style={styles.permission}><Text style={ui.body}>歩数データ</Text><Text style={styles.permissionValue}>{healthPermission}</Text></View>
+          <Button title={busy ? "確認中…" : "権限を確認・連携"} disabled={busy} onPress={connectHealth} />
           <Button title={busy ? "同期中…" : "歩数を再同期"} disabled={busy} onPress={resync} />
+          {Platform.OS === "android" && healthPermission.includes("未インストール") && (
+            <Button title="Health Connectをインストール" kind="secondary" onPress={openHealthConnect} />
+          )}
+          <Text style={styles.healthNote}>権限を許可しない場合もアプリは終了せず、端末内に保存済みの歩数を表示します。</Text>
         </Card>
 
         <Card>
@@ -148,4 +181,5 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
   permission: { gap: 3, marginVertical: 13, padding: 10, borderRadius: 12, backgroundColor: colors.foam },
   permissionValue: { color: colors.ocean, fontSize: 11, fontWeight: "800" },
+  healthNote: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 9 },
 });

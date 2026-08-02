@@ -202,12 +202,12 @@ export default function FishScreen() {
   }, [last?.isBoss, phase, unlockAnimation]);
 
   const chooseFish = (usedBait: ShopItem) => {
-    const habitat = spot?.habitat ?? "pond";
+    const areaFishIds = new Set(spot?.fishIds ?? []);
     let rank = baitRank(steps, usedBait);
-    let pool = FISH.filter((fish) => fish.habitats.includes(habitat) && fish.rank === rank);
+    let pool = FISH.filter((fish) => areaFishIds.has(fish.id) && fish.rank === rank);
     while (!pool.length && RANK_INDEX[rank] > 0) {
       rank = RANKS[RANK_INDEX[rank] - 1];
-      pool = FISH.filter((fish) => fish.habitats.includes(habitat) && fish.rank === rank);
+      pool = FISH.filter((fish) => areaFishIds.has(fish.id) && fish.rank === rank);
     }
     return pool[Math.floor(Math.random() * pool.length)] ?? FISH[0];
   };
