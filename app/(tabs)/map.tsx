@@ -57,7 +57,7 @@ export default function AreaScreen() {
             key={chapter}
             source={chapter === 1 ? worldBackground : advancedWorldBackground}
             resizeMode="cover"
-            style={[styles.world, { height: Math.max(700, height - 78) }]}
+            style={[styles.world, { height: Math.max(820, height + 120) }]}
           >
             <View style={styles.chapterBadge}>
               <Text style={styles.chapterNumber}>CHAPTER {chapter}</Text>
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   progressDot: { flex: 1, height: 5, borderRadius: 99, backgroundColor: "#C9D4D5" },
   progressUnlocked: { backgroundColor: colors.aqua },
   progressCleared: { backgroundColor: colors.gold },
-  chapterBadge: { position: "absolute", left: 12, top: 118, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "rgba(5,42,57,.82)" },
+  chapterBadge: { position: "absolute", left: 12, top: 112, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: "rgba(5,42,57,.82)" },
   chapterNumber: { color: colors.aqua, fontSize: 9, fontWeight: "900", letterSpacing: 1.3 },
   chapterName: { color: colors.white, fontSize: 15, fontWeight: "900", marginTop: 1 },
   areaNode: { position: "absolute", width: 132, marginLeft: -66, alignItems: "center", zIndex: 3 },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, ImageBackground, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAudioPlayer } from "expo-audio";
@@ -7,7 +7,7 @@ import * as Haptics from "expo-haptics";
 import { Button } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
 import { FISH, HABITAT_NAMES, RANK_INDEX, RANKS, Rank, SHOP, ShopItem } from "../../src/constants/game";
-import { FishingArea } from "../../src/constants/areas";
+import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
 import { colors, rankColors } from "../../src/constants/theme";
 import {
   consumeSelectedBait, getBaitInventory, getEquippedItems, getSelectedBait, getTodayCatchCount,
@@ -27,8 +27,11 @@ type CatchResult = {
   aquarium: string;
   bigCatch: boolean;
   closeCall: boolean;
+  isBoss: boolean;
+  unlockedAreaName?: string;
 };
 type BattleConfig = { zone: number; seconds: number; pull: number };
+const bossCutin = require("../../assets/game/boss-cutin.png");
 
 const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
   E: { zone: 30, seconds: 15, pull: 0.65 },
@@ -113,11 +116,16 @@ export default function FishScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [baitStock, setBaitStock] = useState<Record<string, number>>({});
   const [showBaitPicker, setShowBaitPicker] = useState(false);
+  const [showBossCutin, setShowBossCutin] = useState(false);
+  const [bossStage, setBossStage] = useState(1);
+  const [bossRage, setBossRage] = useState(false);
+  const [fishAction, setFishAction] = useState("");
   const reelSound = useAudioPlayer(require("../../assets/audio/reel.wav"));
   const tensionSound = useAudioPlayer(require("../../assets/audio/tension.wav"));
   const splashSound = useAudioPlayer(require("../../assets/audio/splash.wav"));
   const catchSound = useAudioPlayer(require("../../assets/audio/catch.wav"));
   const escapeSound = useAudioPlayer(require("../../assets/audio/escape.wav"));
+  const bossMusic = useAudioPlayer(require("../../assets/audio/boss-battle.wav"));
   const holdingRef = useRef(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorRef = useRef(50);
@@ -126,10 +134,21 @@ export default function FishScreen() {
   const finishingRef = useRef(false);
   const tensionAtRef = useRef(0);
   const reelAudioAtRef = useRef(0);
+  const bossStageRef = useRef(1);
+  const bossRageRef = useRef(false);
+  const fishActionRef = useRef("");
+  const [unlockAnimation] = useState(() => new Animated.Value(0));
 
   const playSound = useCallback((player: typeof reelSound) => {
     if (settings.soundVolume <= 0) return;
     player.volume = settings.soundVolume;
+    void player.seekTo(0).then(() => player.play());
+  }, [settings.soundVolume]);
+
+  const playBossMusic = useCallback((player: typeof bossMusic) => {
+    if (settings.soundVolume <= 0) return;
+    player.loop = true;
+    player.volume = Math.min(0.75, settings.soundVolume);
     void player.seekTo(0).then(() => player.play());
   }, [settings.soundVolume]);
 
@@ -169,9 +188,18 @@ export default function FishScreen() {
 
   useFocusEffect(useCallback(() => {
     load();
-    return clearTimer;
-  }, [load]));
+    return () => { clearTimer(); bossMusic.pause(); };
+  }, [bossMusic, load]));
   useEffect(() => clearTimer, []);
+  useEffect(() => {
+    if (phase !== "result" || !last?.isBoss) return;
+    unlockAnimation.setValue(0);
+    Animated.sequence([
+      Animated.timing(unlockAnimation, { toValue: 1, duration: 520, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }),
+      Animated.timing(unlockAnimation, { toValue: .82, duration: 260, useNativeDriver: true }),
+      Animated.timing(unlockAnimation, { toValue: 1, duration: 260, useNativeDriver: true }),
+    ]).start();
+  }, [last?.isBoss, phase, unlockAnimation]);
 
   const chooseFish = (usedBait: ShopItem) => {
     const habitat = spot?.habitat ?? "pond";
@@ -193,6 +221,11 @@ export default function FishScreen() {
     }
     const usedBait = SHOP.find((item) => item.id === consumed) ?? bait;
     clearTimer();
+    bossMusic.pause();
+    setShowBossCutin(false);
+    setBossRage(false);
+    setFishAction("");
+    fishActionRef.current = "";
     setLast(null);
     setCandidate(null);
     setShadowScale(0);
@@ -233,18 +266,37 @@ export default function FishScreen() {
     cursorRef.current = 82;
     targetRef.current = 34;
     progressRef.current = 0;
+    bossStageRef.current = 1;
+    bossRageRef.current = false;
     finishingRef.current = false;
     setCursor(82);
     setTargetCenter(34);
     setBattleProgress(0);
-    setPhase("battle");
+    setBossStage(1);
+    setBossRage(false);
+    setFishAction("");
+    fishActionRef.current = "";
     vibrate("tap");
+    if (candidate.id === spot?.bossFishId) {
+      setShowBossCutin(true);
+      playBossMusic(bossMusic);
+      timeoutRef.current = setTimeout(() => {
+        setShowBossCutin(false);
+        setPhase("battle");
+        vibrate("warning");
+      }, 2400 / settings.animationSpeed);
+    } else {
+      setPhase("battle");
+    }
   };
 
   const finishCatch = useCallback(async () => {
     if (!candidate || !spot || finishingRef.current) return;
     finishingRef.current = true;
     const rankIndex = RANK_INDEX[candidate.rank];
+    const isBoss = candidate.id === spot.bossFishId;
+    const areaIndex = FISHING_AREAS.findIndex((area) => area.id === spot.id);
+    const unlockedAreaName = isBoss ? FISHING_AREAS[areaIndex + 1]?.name : undefined;
     const sizePower = effectPower(gear, "outfit");
     const sizeRoll = Math.min(1, Math.pow(Math.random(), 1 / (1 + sizePower * 0.22)));
     const size = Number((candidate.minCm + (candidate.maxCm - candidate.minCm) * sizeRoll).toFixed(1));
@@ -260,36 +312,68 @@ export default function FishScreen() {
       habitat: spot.habitat,
       steps,
     });
-    setLast({ ...candidate, size, isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall });
+    setLast({ ...candidate, size, isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall, isBoss, unlockedAreaName });
     setTodayCatch((value) => value + 1);
     setPhase("result");
+    setBossRage(false);
+    bossMusic.pause();
     playSound(catchSound);
     vibrate("success");
     load();
     void rankIndex;
-  }, [candidate, catchSound, gear, load, playSound, spot, steps, vibrate]);
+  }, [bossMusic, candidate, catchSound, gear, load, playSound, spot, steps, vibrate]);
 
   useEffect(() => {
     if (phase !== "battle" || !candidate) return;
     const config = BATTLE_CONFIG[candidate.rank];
     const outfitPower = effectPower(gear, "outfit");
     const reelPower = effectPower(gear, "reel");
-    const effectiveZone = Math.min(72, config.zone + reelPower * 3);
+    const isBoss = candidate.id === spot?.bossFishId;
+    const baseEffectiveZone = Math.min(72, config.zone + reelPower * 3);
     const effectiveSeconds = battleSeconds(candidate.rank, gear);
     const started = Date.now();
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
       const target = 34;
+      const stage = isBoss ? progressRef.current < 34 ? 1 : progressRef.current < 67 ? 2 : 3 : 1;
+      if (stage !== bossStageRef.current) {
+        bossStageRef.current = stage;
+        setBossStage(stage);
+        playSound(splashSound);
+        vibrate("warning");
+      }
+      const stageZoneRate = isBoss ? [1, 0.76, 0.58][stage - 1] : 1;
+      const currentEffectiveZone = baseEffectiveZone * stageZoneRate;
+      const rageTick = isBoss && elapsed > 3500 && elapsed % 9000 < 1700;
+      if (rageTick !== bossRageRef.current) {
+        bossRageRef.current = rageTick;
+        setBossRage(rageTick);
+        if (rageTick) { playSound(tensionSound); vibrate("warning"); }
+      }
       const personality = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0) % 4;
-      const burst = personality === 0 ? Math.sin(elapsed / 93) * (elapsed % 2400 < 430 ? 2.2 : 0)
-        : personality === 1 ? Math.cos(elapsed / 150) * 0.75
-          : personality === 2 ? (elapsed % 3100 < 260 ? 2.8 : -0.25)
-            : Math.sin(elapsed / 420) * 0.5;
+      const actionActive = personality === 0 ? elapsed % 1800 < 480
+        : personality === 1 ? elapsed % 3600 > 2850
+          : personality === 2 ? elapsed % 4200 < 1050
+            : elapsed % 2900 < 560;
+      const actionName = actionActive
+        ? ["小刻みに暴れる", "急に強く引っ張る", "ゆっくり抵抗する", "不規則に方向を変える"][personality]
+        : "";
+      if (actionName !== fishActionRef.current) {
+        fishActionRef.current = actionName;
+        setFishAction(actionName);
+        if (actionName) vibrate("warning");
+      }
+      const burst = personality === 0 ? Math.sin(elapsed / 62) * (actionActive ? 1.45 : 0)
+        : personality === 1 ? (actionActive ? 2.3 : -0.1)
+          : personality === 2 ? (actionActive ? 0.72 : 0.18)
+            : actionActive ? Math.sin(elapsed / 85) * 2.05 : Math.sin(elapsed / 430) * 0.25;
+      const behaviorForce = personality === 1 && actionActive ? 0.65 : Math.max(-0.28, burst * 0.14);
       targetRef.current = target;
-      const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03);
+      const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03) * (isBoss ? 1 + (stage - 1) * 0.16 : 1);
+      const rageForce = rageTick ? (Math.floor(elapsed / 9000) % 2 === 0 ? 0.72 : -0.72) : 0;
       const fishEscape = 0.3 + adjustedPull * 0.13
-        + Math.max(-0.12, burst * 0.1)
-        + (Math.random() - 0.5) * adjustedPull * 0.08;
+        + behaviorForce
+        + (Math.random() - 0.5) * adjustedPull * 0.08 + rageForce;
       const reel = holdingRef.current ? -(0.66 + reelPower * 0.04) : 0;
       if (holdingRef.current && Date.now() - reelAudioAtRef.current > 320) {
         reelAudioAtRef.current = Date.now();
@@ -298,7 +382,7 @@ export default function FishScreen() {
       const rawCursor = cursorRef.current + reel + fishEscape;
       const nextCursor = Math.max(0, Math.min(100, rawCursor));
       cursorRef.current = nextCursor;
-      const inside = Math.abs(nextCursor - target) <= effectiveZone / 2;
+      const inside = Math.abs(nextCursor - target) <= currentEffectiveZone / 2;
       const gain = 50 / (effectiveSeconds * 1000) * 100;
       progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain : -gain * 0.85)));
       setCursor(nextCursor);
@@ -317,14 +401,16 @@ export default function FishScreen() {
         setEscapeReason(rawCursor <= 0 ? "巻きすぎて糸が切れました" : "魚がゲージ外へ逃げ、糸が切れました");
         playSound(escapeSound);
         vibrate("error");
+        bossMusic.pause();
         setPhase("escaped");
       }
     }, 50);
     return () => clearInterval(interval);
-  }, [candidate, escapeSound, finishCatch, gear, phase, playSound, reelSound, tensionSound, vibrate]);
+  }, [bossMusic, candidate, escapeSound, finishCatch, gear, phase, playSound, reelSound, splashSound, spot?.bossFishId, tensionSound, vibrate]);
 
   const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
-  const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3);
+  const isBossBattle = Boolean(candidate && candidate.id === spot?.bossFishId);
+  const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3) * (isBossBattle ? [1, 0.76, 0.58][bossStage - 1] : 1);
   const effectiveSeconds = candidate ? battleSeconds(candidate.rank, gear) : config.seconds;
   const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));
   const inTargetZone = Math.abs(cursor - targetCenter) <= effectiveZone / 2;
@@ -337,6 +423,10 @@ export default function FishScreen() {
     holdingRef.current = false;
     clearTimer();
     setShowBaitPicker(false);
+    setShowBossCutin(false);
+    setBossRage(false);
+    setFishAction("");
+    bossMusic.pause();
     setPhase("idle");
     router.navigate("/(tabs)/map");
   };
@@ -389,7 +479,7 @@ export default function FishScreen() {
         </View>
 
         {phase !== "result" && (
-          <View style={styles.controlPanel}>
+          <View style={[styles.controlPanel, isBossBattle && styles.bossControlPanel]}>
             {phase === "idle" && <>
               <Text style={styles.panelTitle}>この場所で釣りますか？</Text>
               <Text style={styles.panelHelp}>{todayCatch >= dailyCapacity ? "クーラーが満杯です" : bait ? "投げると餌を1個消費します" : "交換画面で餌を購入してください"}</Text>
@@ -413,9 +503,12 @@ export default function FishScreen() {
             </>}
             {phase === "battle" && candidate && <>
               <View style={styles.between}>
-                <Text style={[styles.rank, { color: rankColors[candidate.rank] }]}>{candidate.rank} RANK BATTLE</Text>
+                <Text style={[styles.rank, { color: isBossBattle ? "#FFD963" : rankColors[candidate.rank] }]}>{isBossBattle ? `👑 NUSHI PHASE ${bossStage}/3` : `${candidate.rank} RANK BATTLE`}</Text>
                 <Text style={styles.muted}>基準 {config.seconds}秒 → 装備後 {effectiveSeconds.toFixed(1)}秒</Text>
               </View>
+              {isBossBattle && <View style={styles.bossPhases}>{[1, 2, 3].map((stage) => <View key={stage} style={[styles.bossPhase, bossStage >= stage && styles.bossPhaseActive]}><Text style={styles.bossPhaseText}>{stage}</Text></View>)}</View>}
+              {bossRage && <View style={styles.rageBanner}><Text style={styles.rageText}>⚠ ヌシが大暴れしている！</Text></View>}
+              {!bossRage && fishAction && <View style={styles.fishActionBanner}><Text style={styles.fishActionText}>！ {fishAction}</Text></View>}
               <View style={styles.battleStatusRow}>
                 <Text style={styles.battleHelp}>魚を緑の枠まで巻き寄せて維持</Text>
                 <Text style={[styles.battleStatus, inTargetZone && styles.battleStatusSafe, battleDanger && styles.battleStatusDanger]}>
@@ -425,16 +518,17 @@ export default function FishScreen() {
               <View style={styles.distanceLabels}>
                 <Text style={styles.distanceLabel}>近い</Text><Text style={styles.distanceTitle}>魚との距離</Text><Text style={styles.distanceLabel}>遠い</Text>
               </View>
-              <View style={styles.gauge}>
+              <View style={[styles.gauge, isBossBattle && styles.bossGauge]}>
                 <View style={styles.distanceGreen} />
                 <View style={styles.distanceYellow} />
                 <View style={styles.distanceRed} />
-                <View style={[styles.targetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
+                <View style={[styles.targetZone, isBossBattle && styles.bossTargetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
                 <View style={styles.anglerCursor}><Text style={styles.anglerIcon}>🧍</Text></View>
                 <View style={[styles.fishCursor, { left: `${Math.max(4, Math.min(96, cursor))}%` }]}><Text style={styles.battleFishIcon}>🐟</Text></View>
+                {(bossRage || fishAction) && <View style={[styles.exclamationBubble, { left: `${Math.max(5, Math.min(92, cursor))}%` }]}><Text style={styles.exclamationText}>!</Text></View>}
               </View>
               <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%`, backgroundColor: captureColor }]} /></View>
-              <Text style={styles.progressText}>捕獲 {Math.round(battleProgress)}%</Text>
+              <Text style={[styles.progressText, isBossBattle && styles.bossProgressText]}>{isBossBattle ? `ヌシ攻略 ${Math.round(battleProgress)}%` : `捕獲 ${Math.round(battleProgress)}%`}</Text>
               <Pressable
                 onPressIn={() => {
                   holdingRef.current = true;
@@ -454,6 +548,7 @@ export default function FishScreen() {
 
         {phase === "result" && last && (
           <View style={styles.resultPanel}>
+            {last.isBoss && <Animated.View style={[styles.areaClear, { opacity: unlockAnimation, transform: [{ scale: unlockAnimation }] }]}><Text style={styles.areaClearTitle}>AREA CLEAR!</Text><Text style={styles.areaClearBoss}>👑 ヌシを釣り上げた！</Text>{last.unlockedAreaName ? <Text style={styles.areaUnlock}>🔓 次のエリア「{last.unlockedAreaName}」解放</Text> : <Text style={styles.areaUnlock}>🏆 全エリア制覇！</Text>}</Animated.View>}
             <Text style={styles.caught}>CATCH!</Text>
             {last.bigCatch && <Text style={styles.bigCatch}>✨ BIG CATCH! ✨</Text>}
             {last.closeCall && <Text style={styles.closeCall}>ギリギリの勝利！</Text>}
@@ -500,6 +595,18 @@ export default function FishScreen() {
             </Pressable>
           </Pressable>
         </Modal>
+        <Modal visible={showBossCutin} transparent animationType="fade" statusBarTranslucent>
+          <ImageBackground source={bossCutin} resizeMode="cover" style={styles.bossCutin}>
+            <View style={styles.bossCutinShade} />
+            <View style={styles.bossCutinCopy}>
+              <Text style={styles.bossWarning}>WARNING</Text>
+              <Text style={styles.bossEncounter}>ヌシ、出現。</Text>
+              <Text style={styles.bossCandidateName}>{candidate?.name}</Text>
+              <View style={styles.bossCutinLine} />
+              <Text style={styles.bossCutinHelp}>3段階の激闘に備えろ</Text>
+            </View>
+          </ImageBackground>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -538,6 +645,7 @@ const styles = StyleSheet.create({
   floatDown: { top: "54%", height: 18 },
   splash: { color: colors.white, fontWeight: "900", fontSize: 27, textShadowColor: colors.navy, textShadowRadius: 5 },
   controlPanel: { position: "absolute", left: 12, right: 12, bottom: 12, backgroundColor: "rgba(255,255,255,.95)", borderRadius: 22, padding: 15, gap: 9 },
+  bossControlPanel: { backgroundColor: "rgba(255,248,222,.97)", borderWidth: 2, borderColor: "#E9B949" },
   panelTitle: { textAlign: "center", color: colors.navy, fontWeight: "900", fontSize: 20 },
   panelHelp: { textAlign: "center", color: colors.muted, fontWeight: "700", fontSize: 12 },
   choiceActions: { flexDirection: "row", gap: 8 },
@@ -552,26 +660,43 @@ const styles = StyleSheet.create({
   battleStatus: { color: colors.gold, fontSize: 11, fontWeight: "900" },
   battleStatusSafe: { color: "#179653" },
   battleStatusDanger: { color: colors.danger },
+  bossPhases: { flexDirection: "row", gap: 6 },
+  bossPhase: { flex: 1, height: 7, borderRadius: 99, backgroundColor: "rgba(255,255,255,.18)", alignItems: "center", justifyContent: "center" },
+  bossPhaseActive: { backgroundColor: "#F0B83F" },
+  bossPhaseText: { color: "transparent", fontSize: 1 },
+  rageBanner: { borderRadius: 9, paddingVertical: 6, backgroundColor: "#A9212B" },
+  rageText: { color: colors.white, textAlign: "center", fontSize: 11, fontWeight: "900" },
+  fishActionBanner: { borderRadius: 9, paddingVertical: 5, backgroundColor: "#FFF0B8", borderWidth: 1, borderColor: "#E9B949" },
+  fishActionText: { color: "#8B4A00", textAlign: "center", fontSize: 11, fontWeight: "900" },
   distanceLabels: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: -5 },
   distanceLabel: { color: colors.muted, fontSize: 9, fontWeight: "800" },
   distanceTitle: { color: colors.navy, fontSize: 11, fontWeight: "900" },
   gauge: { height: 64, borderRadius: 15, position: "relative", overflow: "hidden", borderWidth: 3, borderColor: colors.navy, flexDirection: "row" },
+  bossGauge: { height: 70, borderColor: "#F0B83F", shadowColor: "#FF4D45", shadowOpacity: .8, shadowRadius: 9 },
   distanceGreen: { flex: 1, backgroundColor: "#42D96B" },
   distanceYellow: { flex: 1, backgroundColor: "#F5D94B" },
   distanceRed: { flex: 1, backgroundColor: "#FF6858" },
   targetZone: { position: "absolute", top: 3, bottom: 3, backgroundColor: "rgba(255,255,255,.3)", borderWidth: 3, borderColor: "#058C62", borderRadius: 9 },
+  bossTargetZone: { borderColor: "#FFF3A6", backgroundColor: "rgba(255,215,80,.25)" },
   anglerCursor: { position: "absolute", left: 2, top: 14, zIndex: 4 },
   anglerIcon: { fontSize: 24 },
   fishCursor: { position: "absolute", top: 16, marginLeft: -13, zIndex: 5 },
   battleFishIcon: { fontSize: 22, transform: [{ scaleX: -1 }] },
+  exclamationBubble: { position: "absolute", top: 1, width: 22, height: 22, marginLeft: -11, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: colors.coral, borderWidth: 2, borderColor: colors.white, zIndex: 8 },
+  exclamationText: { color: colors.white, fontSize: 14, lineHeight: 15, fontWeight: "900" },
   progressTrack: { height: 13, backgroundColor: colors.line, borderRadius: 8, marginTop: 3, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: colors.gold },
   progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
+  bossProgressText: { color: "#8B2B24" },
   reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 2 },
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelText: { color: colors.white, fontWeight: "900", fontSize: 16 },
   reelSubText: { color: "rgba(255,255,255,.8)", fontWeight: "700", fontSize: 10, marginTop: 2 },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
+  areaClear: { alignSelf: "stretch", borderRadius: 16, padding: 11, alignItems: "center", backgroundColor: "#122F48", borderWidth: 2, borderColor: "#F0B83F" },
+  areaClearTitle: { color: "#FFD963", fontSize: 23, fontWeight: "900", letterSpacing: 1.2 },
+  areaClearBoss: { color: colors.white, fontSize: 13, fontWeight: "900", marginTop: 2 },
+  areaUnlock: { color: "#9AF0E5", fontSize: 10, fontWeight: "800", marginTop: 4, textAlign: "center" },
   resultActions: { flexDirection: "row", gap: 8, alignSelf: "stretch", marginTop: 4 },
   resultAction: { flex: 1 },
   caught: { color: colors.coral, fontSize: 28, fontWeight: "900" },
@@ -596,4 +721,12 @@ const styles = StyleSheet.create({
   baitQuantity: { color: colors.ink, fontSize: 11, fontWeight: "800" },
   baitSelected: { color: colors.coral, fontSize: 10, fontWeight: "900" },
   baitSelect: { color: colors.ocean, fontSize: 10, fontWeight: "900" },
+  bossCutin: { flex: 1, justifyContent: "flex-end" },
+  bossCutinShade: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,8,20,.22)" },
+  bossCutinCopy: { margin: 18, marginBottom: 70, borderLeftWidth: 5, borderColor: colors.coral, padding: 16, backgroundColor: "rgba(2,16,30,.88)" },
+  bossWarning: { color: colors.coral, fontSize: 16, fontWeight: "900", letterSpacing: 4 },
+  bossEncounter: { color: colors.white, fontSize: 36, fontWeight: "900", marginTop: 4 },
+  bossCandidateName: { color: "#FFD963", fontSize: 21, fontWeight: "900" },
+  bossCutinLine: { width: 90, height: 4, backgroundColor: colors.coral, marginVertical: 9 },
+  bossCutinHelp: { color: "#CDE9EF", fontSize: 12, fontWeight: "800" },
 });
