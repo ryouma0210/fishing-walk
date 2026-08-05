@@ -9,7 +9,7 @@ function manualGuides() { return [
   { title: "3. ウキに合わせる", text: "接近ゲージが100%になりウキが沈んだら、「今だ！合わせる」を押します。", art: <View style={styles.approachArt}><View style={styles.approachGreen}/><View style={styles.approachYellow}/><View style={styles.approachRed}/><Text style={styles.approachFish}>🐟</Text><Text style={styles.approachHook}>🪝</Text></View> },
   { title: "4. リールで巻き寄せる", text: "長押しで魚を左へ引き寄せ、離すと右へ逃げます。緑枠内を維持してください。", art: <View><View style={styles.battleArt}><Text style={styles.person}>🧍</Text><View style={styles.safeZone}/><Text style={styles.fish}>🐟</Text></View><Text style={styles.artCaption}>近い・安全　　　　　　　　　遠い・危険</Text></View> },
   { title: "5. ヌシとの3段階バトル", text: "ヌシ戦は3段階。段階が進むほど安全範囲が狭まり、一定時間ごとに大暴れします。", art: <View style={styles.stageArt}>{[1,2,3].map((stage)=><View key={stage} style={[styles.stage, stage === 3 && styles.finalStage]}><Text style={styles.stageText}>PHASE {stage}</Text></View>)}</View> },
-  { title: "6. 水族館と装備", text: "釣った魚は生息地別の水槽へ。歩数ポイントで竿・リール・衣装・餌を交換できます。", art: <View style={styles.baitArt}><Text style={styles.bigEmoji}>🐠</Text><Text style={styles.arrow}>→</Text><Text style={styles.bigEmoji}>🏛️</Text><Text style={styles.arrow}>＋</Text><Text style={styles.bigEmoji}>⚙️</Text></View> },
+  { title: "6. 全国図鑑と装備", text: "釣った魚と名産物は都道府県別の図鑑へ登録。歩数ポイントで竿・リール・衣装一式・餌を交換できます。", art: <View style={styles.baitArt}><Text style={styles.bigEmoji}>🐠</Text><Text style={styles.arrow}>→</Text><Text style={styles.bigEmoji}>🗾</Text><Text style={styles.arrow}>＋</Text><Text style={styles.bigEmoji}>⚙️</Text></View> },
 ]; }
 
 export default function ManualScreen() {

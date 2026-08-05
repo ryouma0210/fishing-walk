@@ -3,10 +3,10 @@ import { Alert, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } 
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { AnglerArt, GearArt } from "../../src/components/GameArt";
-import { DEFAULT_GEAR, GearKind, SHOP } from "../../src/constants/game";
+import { GearKind, SHOP } from "../../src/constants/game";
 import {
-  buyBait, buyItem, equipItem, equipOutfitSet, getBaitInventory, getInventory, getWalkPoints,
-  InventoryRow, selectBait, unequipKind, unequipOutfit,
+  buyBait, buyItem, buyOutfitSet, equipItem, equipOutfitSet, getBaitInventory, getInventory, getWalkPoints,
+  InventoryRow, selectBait, unequipOutfit,
 } from "../../src/database/db";
 import { colors } from "../../src/constants/theme";
 
@@ -14,12 +14,12 @@ const KIND_NAMES: Record<GearKind, string> = {
   hat: "帽子", top: "服", bottom: "ズボン", shoes: "靴",
   rod: "竿", reel: "リール", bait: "餌", cooler: "クーラー",
 };
-const KINDS = Object.keys(KIND_NAMES) as GearKind[];
+const KINDS: GearKind[] = ["hat", "rod", "reel", "bait", "cooler"];
+KIND_NAMES.hat = "衣装一式";
 const DEFAULT_ICONS: Record<GearKind, string> = {
   hat:"◯", top:"👕", bottom:"👖", shoes:"👟", rod:"🎣", reel:"⚙️", bait:"🪱", cooler:"🧊",
 };
 const APPAREL_KINDS: GearKind[] = ["hat", "top", "bottom", "shoes"];
-const APPAREL_DISPLAY_ORDER: GearKind[] = ["top", "hat", "bottom", "shoes"];
 const OUTFIT_NAMES = ["ライトアングラー", "ウォータープルーフ", "ストームフィッシャー", "海王スタイル"];
 
 export default function ShopScreen() {
@@ -27,7 +27,7 @@ export default function ShopScreen() {
   const [points, setPoints] = useState(0);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [baitStock, setBaitStock] = useState<Record<string, { quantity: number; selected: number }>>({});
-  const [filter, setFilter] = useState<GearKind>("rod");
+  const [filter, setFilter] = useState<GearKind | null>(null);
   const [showAngler, setShowAngler] = useState(false);
   const [baitQuantity, setBaitQuantity] = useState(1);
   const { width } = useWindowDimensions();
@@ -41,8 +41,6 @@ export default function ShopScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const owned = useMemo(() => new Map(inventory.map((row) => [row.item_id, row])), [inventory]);
-  const equipped = SHOP.filter((item) => owned.get(item.id)?.equipped === 1);
-  const selectedBait = SHOP.find((item) => baitStock[item.id]?.selected === 1);
   const equippedOutfit = [1, 2, 3, 4].find((stage) =>
     APPAREL_KINDS.every((kind) => owned.get(`${kind}${stage}`)?.equipped === 1),
   );
@@ -82,6 +80,16 @@ export default function ShopScreen() {
     await load();
   };
 
+  const exchangeOutfit = async (stage: number, cost: number) => {
+    const result = await buyOutfitSet(stage, cost);
+    if (result === "insufficient") Alert.alert("歩数ポイントが不足しています", `あと${Math.max(0, cost - points).toLocaleString()}pt必要です。`);
+    else {
+      await equipOutfitSet(stage);
+      Alert.alert(result === "ok" ? "衣装一式を交換しました" : "衣装を変更しました", `${OUTFIT_NAMES[stage - 1]}を着用しました。`);
+    }
+    await load();
+  };
+
   return (
     <Screen>
       <View style={ui.between}>
@@ -91,18 +99,27 @@ export default function ShopScreen() {
         </Pressable>
       </View>
       <Card>
-        <Text style={ui.h2}>現在の衣装</Text>
-        <Pressable onPress={() => setShowAngler(true)} style={styles.anglerPreview}>
-          <AnglerArt stage={outfitStage} height={245} />
-          <View style={styles.zoomBadge}><Text style={styles.zoomText}>タップして拡大</Text></View>
-        </Pressable>
-        <Text style={styles.outfitName}>{equippedOutfit ? OUTFIT_NAMES[equippedOutfit - 1] : "普段着"}</Text>
-        <Text style={ui.body}>同じシリーズの帽子・服・ズボン・靴を4点揃えると、一式で衣装交換できます。</Text>
+        <Text style={ui.h2}>交換一覧</Text>
+        <Text style={ui.body}>交換したい装備の種類を選択してください。</Text>
+        <View style={styles.exchangeMenu}>
+          {KINDS.map((kind) => (
+            <Pressable key={kind} onPress={() => setFilter(kind)} style={[styles.exchangeMenuItem, filter === kind && styles.activeExchangeMenuItem]}>
+              <Text style={styles.exchangeMenuIcon}>{DEFAULT_ICONS[kind]}</Text>
+              <Text style={[styles.exchangeMenuText, filter === kind && styles.activeExchangeMenuText]}>{KIND_NAMES[kind]}</Text>
+              <Text style={styles.exchangeMenuArrow}>›</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Card>
+
+      {filter === "hat" && <Card>
+        <Text style={ui.h2}>衣装一式</Text>
+        <Text style={ui.body}>帽子・服・ズボン・靴は分割購入せず、完成した衣装一式として交換・着用します。</Text>
         <View style={styles.outfitSets}>
           {[1, 2, 3, 4].map((stage) => {
             const complete = APPAREL_KINDS.every((kind) => owned.has(`${kind}${stage}`));
             const active = equippedOutfit === stage;
-            const missing = APPAREL_DISPLAY_ORDER.filter((kind) => !owned.has(`${kind}${stage}`));
+            const setCost = SHOP.filter((item) => APPAREL_KINDS.includes(item.kind) && item.id.endsWith(String(stage))).reduce((sum, item) => sum + item.cost, 0);
             return (
               <View key={stage} style={[styles.outfitSet, active && styles.activeOutfitSet]}>
                 <View style={styles.outfitSetBody}>
@@ -112,52 +129,33 @@ export default function ShopScreen() {
                   </View>
                   <View style={styles.outfitSetInfo}>
                     <Text style={styles.outfitSetName}>{OUTFIT_NAMES[stage - 1]}</Text>
-                    <Text style={complete ? styles.complete : styles.incomplete}>{complete ? "✓ 4点所持" : "未完成"}</Text>
-                    {missing.length > 0 && (
-                      <View style={styles.missingBox}>
-                        <Text style={styles.missingLabel}>未購入</Text>
-                        <Text style={styles.missingItems}>{missing.map((kind) => KIND_NAMES[kind]).join("、")}</Text>
-                      </View>
-                    )}
+                    <Text style={complete ? styles.complete : styles.incomplete}>{complete ? "✓ 所持済み" : "未交換"}</Text>
+                    <Text style={styles.outfitPoints}>交換ポイント {setCost.toLocaleString()}pt</Text>
+                    <Text style={styles.ownedPoints}>所持ポイント {points.toLocaleString()}pt</Text>
                   </View>
                 </View>
                 <Button
-                  title={active ? "着用中" : "一式に着替える"}
-                  disabled={!complete || active}
+                  title={active ? "着用中" : complete ? "この衣装に着替える" : `一式を交換 ${setCost.toLocaleString()}pt`}
+                  disabled={active}
                   kind="secondary"
-                  onPress={async () => { await equipOutfitSet(stage); await load(); }}
+                  onPress={async () => { if (complete) { await equipOutfitSet(stage); await load(); } else await exchangeOutfit(stage, setCost); }}
                 />
               </View>
             );
           })}
         </View>
         {equippedOutfit && <Button title="普段着に戻す" kind="secondary" onPress={async () => { await unequipOutfit(); await load(); }} />}
-        <View style={styles.loadout}>
-          {KINDS.map((kind) => {
-            const gear = kind === "bait" ? selectedBait : equipped.find((entry) => entry.kind === kind);
-            return (
-              <Pressable key={kind} onPress={() => setFilter(kind)} style={[styles.slot, filter === kind && styles.activeSlot]}>
-                <Text style={styles.slotEmoji}>{gear?.emoji ?? DEFAULT_ICONS[kind]}</Text>
-                <Text style={styles.slotKind}>{KIND_NAMES[kind]}</Text>
-                <Text numberOfLines={1} style={styles.slotName}>{gear?.name ?? DEFAULT_GEAR[kind]}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        {filter !== "bait" && !APPAREL_KINDS.includes(filter) && equipped.some((item) => item.kind === filter) && (
-          <Button title={`${KIND_NAMES[filter]}を初期装備に戻す`} kind="secondary" onPress={async () => { await unequipKind(filter); await load(); }} />
-        )}
-      </Card>
+      </Card>}
 
-      <View style={styles.filters}>
+      {filter && <View style={styles.filters}>
         {KINDS.map((kind) => (
           <Pressable key={kind} onPress={() => setFilter(kind)} style={[styles.filter, filter === kind && styles.activeFilter]}>
             <Text style={[styles.filterText, filter === kind && styles.activeFilterText]}>{KIND_NAMES[kind]}</Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
 
-      {SHOP.filter((item) => item.kind === filter).map((item) => {
+      {filter && SHOP.filter((item) => item.kind === filter && !APPAREL_KINDS.includes(item.kind)).map((item) => {
         const row = owned.get(item.id);
         const bait = baitStock[item.id];
         return (
@@ -167,10 +165,10 @@ export default function ShopScreen() {
               <View style={styles.info}>
                 <View style={ui.between}>
                   <Text style={ui.h2}>{item.name}</Text>
-                  <Text style={row ? styles.owned : styles.notOwned}>{row ? "所持済み" : "未購入"}</Text>
+                  {!item.consumable && <Text style={row ? styles.owned : styles.notOwned}>{row ? "所持済み" : "未購入"}</Text>}
                 </View>
                 <Text style={ui.body}>{item.description}</Text>
-                <Text style={styles.cost}>{item.cost.toLocaleString()} pt</Text>
+                <Text style={styles.cost}>交換ポイント {item.cost.toLocaleString()}pt / 所持ポイント {points.toLocaleString()}pt</Text>
                 {item.consumable && <Text style={styles.stock}>所持 {bait?.quantity ?? 0}個</Text>}
               </View>
             </View>
@@ -229,6 +227,13 @@ export default function ShopScreen() {
 const styles = StyleSheet.create({
   settingsButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, backgroundColor: colors.navy },
   settingsButtonText: { color: colors.white, fontSize: 12, fontWeight: "900" },
+  exchangeMenu: { gap: 8, marginTop: 12 },
+  exchangeMenuItem: { minHeight: 64, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.foam },
+  activeExchangeMenuItem: { borderColor: colors.ocean, backgroundColor: "#DFF5F3" },
+  exchangeMenuIcon: { width: 34, fontSize: 25, textAlign: "center" },
+  exchangeMenuText: { flex: 1, color: colors.ink, fontSize: 16, fontWeight: "900" },
+  activeExchangeMenuText: { color: colors.ocean },
+  exchangeMenuArrow: { color: colors.ocean, fontSize: 27 },
   loadout: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginVertical: 12 },
   slot: { width: "23.3%", backgroundColor: colors.foam, borderRadius: 12, padding: 7, alignItems: "center", borderWidth: 1, borderColor: "transparent" },
   activeSlot: { borderColor: colors.coral },
@@ -257,6 +262,8 @@ const styles = StyleSheet.create({
   outfitSetName: { fontWeight: "900", color: colors.ink },
   complete: { color: colors.ocean, fontSize: 12, fontWeight: "800" },
   incomplete: { color: colors.coral, fontSize: 12, fontWeight: "900" },
+  outfitPoints: { color: colors.coral, fontSize: 11, fontWeight: "900" },
+  ownedPoints: { color: colors.muted, fontSize: 10, fontWeight: "800" },
   previewBadge: { position: "absolute", left: 5, right: 5, bottom: 5, borderRadius: 99, paddingVertical: 4, backgroundColor: "rgba(6,59,76,.84)", alignItems: "center" },
   previewBadgeText: { color: colors.white, fontSize: 9, fontWeight: "900" },
   missingBox: { borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7, backgroundColor: "#FFF0EE", borderWidth: 1, borderColor: "#FFD0CB" },

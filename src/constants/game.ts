@@ -1,3 +1,5 @@
+import { PREFECTURES } from "./prefectureData";
+
 export type Rank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS";
 export type Habitat = "pond" | "river" | "lake" | "sea";
 export type GearKind = "hat" | "top" | "bottom" | "shoes" | "rod" | "reel" | "bait" | "cooler";
@@ -13,6 +15,8 @@ export type Fish = {
   habitats: Habitat[];
   aquarium: string;
   description: string;
+  isSpecial?: boolean;
+  prefectureSlug?: string;
 };
 
 export type ShopItem = {
@@ -46,7 +50,7 @@ function creature(
 }
 
 // イラストシートの並びと同じく、池・川・湖・海を各20種ずつ定義する。
-export const FISH: Fish[] = [
+const LEGACY_FISH: Fish[] = [
   // 池 20種
   creature("pond_medaka","メダカ","E",2,4,"pond","池の小魚館","群れで泳ぐ小さな池の魚。"),
   creature("pond_goldfish","キンギョ","E",5,20,"pond","池の小魚館","鮮やかな尾びれを揺らす人気者。","🐠"),
@@ -246,6 +250,41 @@ export const FISH: Fish[] = [
   creature("sea_abyss_oarfish","冥海リュウグウ","SS",500,1400,"sea","極夜深海館","青白い光を引いて泳ぐ長大魚。","💠"),
   creature("sea_abyss_boss","深淵皇アビサル","SSS",1200,3000,"sea","極夜深海ヌシ館","海溝の最深部に君臨する深淵皇。","👑"),
 ];
+
+const PREFECTURE_RANK_NAMES: Record<Rank, string> = {
+  E: "小魚", D: "川魚", C: "銀鱗魚", B: "力魚", A: "大物", S: "幻魚", SS: "伝説魚", SSS: "ヌシ",
+};
+
+export const PREFECTURE_FISH: Fish[] = PREFECTURES.flatMap((prefecture, prefectureIndex) => {
+  const rankFish = RANKS.map((rank, rankIndex): Fish => ({
+    id: `jp_${prefecture.slug}_${rank.toLowerCase()}`,
+    name: rank === "SSS" ? `${prefecture.name}のヌシ` : `${prefecture.name}の${PREFECTURE_RANK_NAMES[rank]}`,
+    emoji: rank === "SSS" ? "👑" : "🐟",
+    rank,
+    minCm: 5 + rankIndex * 18,
+    maxCm: 18 + rankIndex * 75,
+    habitats: [prefecture.habitat],
+    aquarium: `${prefecture.name}図鑑`,
+    description: `${prefecture.name}の水辺で出会える${rank}ランクの生き物。`,
+    prefectureSlug: prefecture.slug,
+  }));
+  const products = prefecture.products.map((name, productIndex): Fish => ({
+    id: `jp_${prefecture.slug}_special_${productIndex + 1}`,
+    name,
+    emoji: "🎁",
+    rank: "E",
+    minCm: 10,
+    maxCm: 30 + prefectureIndex % 12,
+    habitats: [prefecture.habitat],
+    aquarium: `${prefecture.name}図鑑`,
+    description: `どの餌でも1個あたり0.3%で釣れる${prefecture.name}の名産物。`,
+    isSpecial: true,
+    prefectureSlug: prefecture.slug,
+  }));
+  return [...rankFish, ...products];
+});
+
+export const FISH: Fish[] = [...LEGACY_FISH, ...PREFECTURE_FISH];
 
 export const SHOP: ShopItem[] = [
   {id:"hat1",name:"潮風キャップ",emoji:"🧢",kind:"hat",cost:40,effect:"outfit",power:1,description:"魚速度-3%・サイズ+2%"},
