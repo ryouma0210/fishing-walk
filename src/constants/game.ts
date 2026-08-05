@@ -1,4 +1,4 @@
-import { PREFECTURES } from "./prefectureData";
+import { ALL_AREA_SEEDS } from "./expansionData";
 
 export type Rank = "E" | "D" | "C" | "B" | "A" | "S" | "SS" | "SSS";
 export type Habitat = "pond" | "river" | "lake" | "sea";
@@ -255,7 +255,7 @@ const PREFECTURE_RANK_NAMES: Record<Rank, string> = {
   E: "小魚", D: "川魚", C: "銀鱗魚", B: "力魚", A: "大物", S: "幻魚", SS: "伝説魚", SSS: "ヌシ",
 };
 
-export const PREFECTURE_FISH: Fish[] = PREFECTURES.flatMap((prefecture, prefectureIndex) => {
+export const PREFECTURE_FISH: Fish[] = ALL_AREA_SEEDS.flatMap((prefecture, prefectureIndex) => {
   const rankFish = RANKS.map((rank, rankIndex): Fish => ({
     id: `jp_${prefecture.slug}_${rank.toLowerCase()}`,
     name: rank === "SSS" ? `${prefecture.name}のヌシ` : `${prefecture.name}の${PREFECTURE_RANK_NAMES[rank]}`,

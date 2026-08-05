@@ -102,7 +102,7 @@ export default function MyPage() {
         <Text style={ui.h2}>釣り記録</Text>
         <View style={styles.stats}>
           <View style={styles.stat}><Text style={styles.statLabel}>総釣果</Text><Text style={styles.statValue}>{stats.count.toLocaleString()}匹</Text></View>
-          <View style={styles.stat}><Text style={styles.statLabel}>発見率</Text><Text style={styles.statValue}>{Math.round(rows.filter((row) => row.fish_id.startsWith("jp_")).length / 470 * 100)}%</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>発見率</Text><Text style={styles.statValue}>{Math.round(rows.filter((row) => row.fish_id.startsWith("jp_")).length / 1470 * 100)}%</Text></View>
           <View style={styles.stat}><Text style={styles.statLabel}>最大サイズ</Text><Text style={styles.statValue}>{stats.largest.toLocaleString()}cm</Text></View>
         </View>
       </Card>
