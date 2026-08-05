@@ -138,6 +138,13 @@ export async function getWalkPoints() {
   return Math.max(0, STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0));
 }
 
+export async function getTotalSteps() {
+  const row = await (await db()).getFirstAsync<{ steps: number }>(
+    "SELECT COALESCE(SUM(steps),0) steps FROM step_days",
+  );
+  return Math.max(0, row?.steps ?? 0);
+}
+
 export async function saveCatch(input: {
   fishId: string;
   size: number;
@@ -256,6 +263,25 @@ export async function buyItem(itemId: string, cost: number) {
       cost,
       new Date().toISOString(),
     );
+    result = "ok";
+  });
+  return result;
+}
+
+export async function buyOutfitSet(stage: number, cost: number) {
+  const safeStage = Math.max(1, Math.min(4, Math.floor(stage)));
+  const itemIds = [`hat${safeStage}`, `top${safeStage}`, `bottom${safeStage}`, `shoes${safeStage}`];
+  const database = await db();
+  let result: "ok" | "owned" | "insufficient" = "insufficient";
+  await database.withTransactionAsync(async () => {
+    const owned = await database.getAllAsync<{ item_id: string }>(`SELECT item_id FROM inventory WHERE item_id IN (${itemIds.map(() => "?").join(",")})`, ...itemIds);
+    if (owned.length === itemIds.length) { result = "owned"; return; }
+    const earned = await database.getFirstAsync<{ points: number }>("SELECT COALESCE(CAST(SUM(steps) / 100 AS INTEGER),0) points FROM step_days");
+    const spent = await database.getFirstAsync<{ points: number }>(`SELECT COALESCE((SELECT SUM(points) FROM point_spends),0) + COALESCE((SELECT SUM(points) FROM consumable_spends),0) points`);
+    if (STG_TEST_POINTS + (earned?.points ?? 0) - (spent?.points ?? 0) < cost) return;
+    const now = new Date().toISOString();
+    for (const itemId of itemIds) await database.runAsync("INSERT OR IGNORE INTO inventory(item_id,equipped,purchased_at) VALUES(?,0,?)", itemId, now);
+    await database.runAsync("INSERT INTO point_spends(item_id,points,spent_at) VALUES(?,?,?)", `outfit${safeStage}`, cost, now);
     result = "ok";
   });
   return result;

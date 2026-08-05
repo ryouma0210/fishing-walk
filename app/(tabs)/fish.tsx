@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, ImageBackground, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Image, ImageBackground, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAudioPlayer } from "expo-audio";
@@ -32,6 +32,7 @@ type CatchResult = {
 };
 type BattleConfig = { zone: number; seconds: number; pull: number };
 const bossCutin = require("../../assets/game/boss-cutin.png");
+const firstPersonRod = require("../../assets/game/first-person-rod.png");
 
 const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
   E: { zone: 30, seconds: 15, pull: 0.65 },
@@ -96,6 +97,80 @@ function WeatherEffects({ speed }: { speed: number }) {
   );
 }
 
+function FirstPersonFishingLayer({ active, fishId, direction, reeling, danger, boss }: {
+  active: boolean;
+  fishId?: string;
+  direction: -1 | 1;
+  reeling: boolean;
+  danger: boolean;
+  boss: boolean;
+}) {
+  const [rodLean] = useState(() => new Animated.Value(0));
+  const [jump] = useState(() => new Animated.Value(0));
+  const [ripple] = useState(() => new Animated.Value(0));
+  const [reelTurn] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.spring(rodLean, {
+      toValue: active ? direction : 0,
+      speed: danger ? 26 : 13,
+      bounciness: danger ? 15 : 8,
+      useNativeDriver: true,
+    }).start();
+  }, [active, danger, direction, rodLean]);
+
+  useEffect(() => {
+    if (!active) { jump.setValue(0); ripple.setValue(0); return; }
+    const jumpLoop = Animated.loop(Animated.sequence([
+      Animated.delay(boss ? 900 : 1700),
+      Animated.timing(jump, { toValue: 1, duration: boss ? 330 : 430, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(jump, { toValue: 0, duration: boss ? 390 : 510, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.delay(boss ? 650 : 1300),
+    ]));
+    const rippleLoop = Animated.loop(Animated.sequence([
+      Animated.timing(ripple, { toValue: 1, duration: 1450, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(ripple, { toValue: 0, duration: 1, useNativeDriver: true }),
+    ]));
+    jumpLoop.start(); rippleLoop.start();
+    return () => { jumpLoop.stop(); rippleLoop.stop(); };
+  }, [active, boss, jump, ripple]);
+
+  useEffect(() => {
+    if (!active || !reeling) return;
+    reelTurn.setValue(0);
+    const loop = Animated.loop(Animated.timing(reelTurn, { toValue: 1, duration: 330, easing: Easing.linear, useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [active, reelTurn, reeling]);
+
+  if (!active) return null;
+  const rodX = rodLean.interpolate({ inputRange: [-1, 1], outputRange: [-24, 24] });
+  const rodRotate = rodLean.interpolate({ inputRange: [-1, 1], outputRange: ["-5deg", "5deg"] });
+  const jumpY = jump.interpolate({ inputRange: [0, .52, 1], outputRange: [4, -135, 0] });
+  const jumpRotate = jump.interpolate({ inputRange: [0, .5, 1], outputRange: ["-8deg", direction < 0 ? "-28deg" : "28deg", "8deg"] });
+  const fishOpacity = jump.interpolate({ inputRange: [0, .08, .9, 1], outputRange: [0, 1, 1, 0] });
+  const rippleScale = ripple.interpolate({ inputRange: [0, 1], outputRange: [.35, 1.8] });
+  const rippleOpacity = ripple.interpolate({ inputRange: [0, .72, 1], outputRange: [.65, .25, 0] });
+  const reelRotate = reelTurn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  return (
+    <View pointerEvents="none" style={styles.firstPersonLayer}>
+      <View style={styles.waterGlint} />
+      <Animated.View style={[styles.waterRipple, { opacity: rippleOpacity, transform: [{ scaleX: rippleScale }, { scaleY: rippleScale }] }]} />
+      {fishId && (
+        <Animated.View style={[styles.jumpingFish, { left: direction < 0 ? "17%" : "58%", opacity: fishOpacity, transform: [{ translateY: jumpY }, { rotate: jumpRotate }, { scaleX: direction }] }]}>
+          <FishArt fishId={fishId} size={boss ? 118 : 82} />
+          <View style={styles.fishSplash}><Text style={styles.fishSplashText}>💦</Text></View>
+        </Animated.View>
+      )}
+      <Animated.View style={[styles.rodRig, { transform: [{ translateX: rodX }, { rotate: rodRotate }, { scale: danger ? 1.035 : 1 }] }]}>
+        <Image source={firstPersonRod} resizeMode="contain" style={styles.rodImage} />
+        <Animated.View style={[styles.reelSpinner, { transform: [{ rotate: reelRotate }] }]}><View style={styles.reelSpoke} /><View style={[styles.reelSpoke, { transform: [{ rotate: "90deg" }] }]} /></Animated.View>
+      </Animated.View>
+      {danger && <View style={styles.tensionFlash}><Text style={styles.tensionFlashText}>!</Text></View>}
+    </View>
+  );
+}
+
 export default function FishScreen() {
   const router = useRouter();
   const { height } = useWindowDimensions();
@@ -120,6 +195,9 @@ export default function FishScreen() {
   const [bossStage, setBossStage] = useState(1);
   const [bossRage, setBossRage] = useState(false);
   const [fishAction, setFishAction] = useState("");
+  const [fishDirection, setFishDirection] = useState<-1 | 1>(1);
+  const [timingFeedback, setTimingFeedback] = useState("");
+  const [isReeling, setIsReeling] = useState(false);
   const reelSound = useAudioPlayer(require("../../assets/audio/reel.wav"));
   const tensionSound = useAudioPlayer(require("../../assets/audio/tension.wav"));
   const splashSound = useAudioPlayer(require("../../assets/audio/splash.wav"));
@@ -127,6 +205,8 @@ export default function FishScreen() {
   const escapeSound = useAudioPlayer(require("../../assets/audio/escape.wav"));
   const bossMusic = useAudioPlayer(require("../../assets/audio/boss-battle.wav"));
   const holdingRef = useRef(false);
+  const reelDirectionRef = useRef<-1 | 0 | 1>(0);
+  const fishDirectionRef = useRef<-1 | 1>(1);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cursorRef = useRef(50);
   const progressRef = useRef(0);
@@ -203,11 +283,15 @@ export default function FishScreen() {
 
   const chooseFish = (usedBait: ShopItem) => {
     const areaFishIds = new Set(spot?.fishIds ?? []);
+    const localSpecials = FISH.filter((fish) => areaFishIds.has(fish.id) && fish.isSpecial);
+    if (localSpecials.length && Math.random() < localSpecials.length * 0.003) {
+      return localSpecials[Math.floor(Math.random() * localSpecials.length)];
+    }
     let rank = baitRank(steps, usedBait);
-    let pool = FISH.filter((fish) => areaFishIds.has(fish.id) && fish.rank === rank);
+    let pool = FISH.filter((fish) => areaFishIds.has(fish.id) && !fish.isSpecial && fish.rank === rank);
     while (!pool.length && RANK_INDEX[rank] > 0) {
       rank = RANKS[RANK_INDEX[rank] - 1];
-      pool = FISH.filter((fish) => areaFishIds.has(fish.id) && fish.rank === rank);
+      pool = FISH.filter((fish) => areaFishIds.has(fish.id) && !fish.isSpecial && fish.rank === rank);
     }
     return pool[Math.floor(Math.random() * pool.length)] ?? FISH[0];
   };
@@ -225,6 +309,9 @@ export default function FishScreen() {
     setShowBossCutin(false);
     setBossRage(false);
     setFishAction("");
+    setTimingFeedback("");
+    reelDirectionRef.current = 0;
+    setIsReeling(false);
     fishActionRef.current = "";
     setLast(null);
     setCandidate(null);
@@ -275,6 +362,11 @@ export default function FishScreen() {
     setBossStage(1);
     setBossRage(false);
     setFishAction("");
+    setFishDirection(1);
+    setTimingFeedback("魚の動きを見て左右を選べ！");
+    reelDirectionRef.current = 0;
+    fishDirectionRef.current = 1;
+    setIsReeling(false);
     fishActionRef.current = "";
     vibrate("tap");
     if (candidate.id === spot?.bossFishId) {
@@ -334,8 +426,19 @@ export default function FishScreen() {
     const started = Date.now();
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
-      const target = 34;
       const stage = isBoss ? progressRef.current < 34 ? 1 : progressRef.current < 67 ? 2 : 3 : 1;
+      const directionPeriod = isBoss ? Math.max(1150, 2500 - stage * 300) : Math.max(1450, 3100 - RANK_INDEX[candidate.rank] * 190);
+      const directionEpoch = Math.floor(elapsed / directionPeriod);
+      const personalitySeed = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0);
+      const direction: -1 | 1 = (directionEpoch + personalitySeed + (personalitySeed % 4 === 3 ? Math.floor(elapsed / 870) : 0)) % 2 === 0 ? -1 : 1;
+      if (direction !== fishDirectionRef.current) {
+        fishDirectionRef.current = direction;
+        setFishDirection(direction);
+        setTimingFeedback("！ 方向転換");
+        playSound(tensionSound);
+        vibrate("warning");
+      }
+      const target = direction < 0 ? 28 : 72;
       if (stage !== bossStageRef.current) {
         bossStageRef.current = stage;
         setBossStage(stage);
@@ -350,7 +453,7 @@ export default function FishScreen() {
         setBossRage(rageTick);
         if (rageTick) { playSound(tensionSound); vibrate("warning"); }
       }
-      const personality = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0) % 4;
+      const personality = personalitySeed % 4;
       const actionActive = personality === 0 ? elapsed % 1800 < 480
         : personality === 1 ? elapsed % 3600 > 2850
           : personality === 2 ? elapsed % 4200 < 1050
@@ -370,11 +473,16 @@ export default function FishScreen() {
       const behaviorForce = personality === 1 && actionActive ? 0.65 : Math.max(-0.28, burst * 0.14);
       targetRef.current = target;
       const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03) * (isBoss ? 1 + (stage - 1) * 0.16 : 1);
-      const rageForce = rageTick ? (Math.floor(elapsed / 9000) % 2 === 0 ? 0.72 : -0.72) : 0;
-      const fishEscape = 0.3 + adjustedPull * 0.13
-        + behaviorForce
+      const rageForce = rageTick ? direction * 0.82 : 0;
+      const fishEscape = direction * (0.12 + adjustedPull * 0.055)
+        + behaviorForce * direction
         + (Math.random() - 0.5) * adjustedPull * 0.08 + rageForce;
-      const reel = holdingRef.current ? -(0.66 + reelPower * 0.04) : 0;
+      const selectedDirection = reelDirectionRef.current;
+      const matchingDirection = selectedDirection === direction;
+      const reelStrength = 0.48 + reelPower * 0.035;
+      const reel = selectedDirection === 0 ? 0
+        : matchingDirection ? (target - cursorRef.current) * 0.065 + direction * reelStrength * 0.08
+          : -(target - cursorRef.current) * 0.055;
       if (holdingRef.current && Date.now() - reelAudioAtRef.current > 320) {
         reelAudioAtRef.current = Date.now();
         playSound(reelSound);
@@ -383,8 +491,11 @@ export default function FishScreen() {
       const nextCursor = Math.max(0, Math.min(100, rawCursor));
       cursorRef.current = nextCursor;
       const inside = Math.abs(nextCursor - target) <= currentEffectiveZone / 2;
+      const perfect = Math.abs(nextCursor - target) <= currentEffectiveZone * 0.18;
       const gain = 50 / (effectiveSeconds * 1000) * 100;
-      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain : -gain * 0.85)));
+      const controlRate = selectedDirection === 0 ? 0.35 : matchingDirection ? (perfect ? 1.85 : 1.15) : -1.6;
+      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain * Math.max(.65, controlRate) : -gain * (matchingDirection ? .55 : 1.35))));
+      if (selectedDirection !== 0) setTimingFeedback(matchingDirection ? perfect ? "PERFECT!" : inside ? "GOOD!" : "追いつけ！" : "MISS! 逆方向！");
       setCursor(nextCursor);
       setTargetCenter(target);
       setBattleProgress(progressRef.current);
@@ -421,6 +532,8 @@ export default function FishScreen() {
 
   const exitFishing = () => {
     holdingRef.current = false;
+    reelDirectionRef.current = 0;
+    setIsReeling(false);
     clearTimer();
     setShowBaitPicker(false);
     setShowBossCutin(false);
@@ -443,6 +556,14 @@ export default function FishScreen() {
         <FishingSpotArt habitat={spot?.habitat ?? "pond"} height={Math.max(520, height)} />
         <View style={styles.sceneShade} />
         <WeatherEffects speed={settings.animationSpeed} />
+        <FirstPersonFishingLayer
+          active={["casting", "approach", "bite", "battle"].includes(phase)}
+          fishId={phase === "battle" ? candidate?.id : undefined}
+          direction={fishDirection}
+          reeling={phase === "battle" && isReeling}
+          danger={phase === "battle" && (battleDanger || bossRage)}
+          boss={isBossBattle}
+        />
         <View style={styles.topHud}>
           <Text style={styles.hudTitle}>{spot?.emoji ?? "🌿"} {spot?.name ?? "釣り場"}</Text>
           <Text style={styles.hudText}>{HABITAT_NAMES[spot?.habitat ?? "pond"]} ・ 本日 {todayCatch}/{dailyCapacity}匹</Text>
@@ -509,8 +630,16 @@ export default function FishScreen() {
               {isBossBattle && <View style={styles.bossPhases}>{[1, 2, 3].map((stage) => <View key={stage} style={[styles.bossPhase, bossStage >= stage && styles.bossPhaseActive]}><Text style={styles.bossPhaseText}>{stage}</Text></View>)}</View>}
               {bossRage && <View style={styles.rageBanner}><Text style={styles.rageText}>⚠ ヌシが大暴れしている！</Text></View>}
               {!bossRage && fishAction && <View style={styles.fishActionBanner}><Text style={styles.fishActionText}>！ {fishAction}</Text></View>}
+              <View style={styles.directionCallout}>
+                <Text style={styles.directionArrow}>{fishDirection < 0 ? "←" : "→"}</Text>
+                <View style={styles.directionCopy}>
+                  <Text style={styles.directionTitle}>魚が{fishDirection < 0 ? "左" : "右"}へ走る！</Text>
+                  <Text style={styles.directionHelp}>同じ方向のリールを長押し</Text>
+                </View>
+                <Text style={[styles.timingFeedback, timingFeedback === "PERFECT!" && styles.perfectFeedback, timingFeedback.startsWith("MISS") && styles.missFeedback]}>{timingFeedback}</Text>
+              </View>
               <View style={styles.battleStatusRow}>
-                <Text style={styles.battleHelp}>魚を緑の枠まで巻き寄せて維持</Text>
+                <Text style={styles.battleHelp}>方向転換を見切って魚を枠内へ</Text>
                 <Text style={[styles.battleStatus, inTargetZone && styles.battleStatusSafe, battleDanger && styles.battleStatusDanger]}>
                   {battleDanger ? "糸切れ注意" : inTargetZone ? "捕獲中！" : cursor > targetCenter ? "魚が逃走中" : "巻きすぎ注意"}
                 </Text>
@@ -529,19 +658,29 @@ export default function FishScreen() {
               </View>
               <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%`, backgroundColor: captureColor }]} /></View>
               <Text style={[styles.progressText, isBossBattle && styles.bossProgressText]}>{isBossBattle ? `ヌシ攻略 ${Math.round(battleProgress)}%` : `捕獲 ${Math.round(battleProgress)}%`}</Text>
-              <Pressable
-                onPressIn={() => {
-                  holdingRef.current = true;
-                  vibrate("tap");
-                }}
-                onPressOut={() => {
-                  holdingRef.current = false;
-                }}
-                style={({ pressed }) => [styles.reelButton, pressed && styles.reelPressed]}
-              >
-                <Text style={styles.reelText}>長押しして左へ巻き寄せる</Text>
-                <Text style={styles.reelSubText}>離すと魚は右へ逃げます</Text>
-              </Pressable>
+              <View style={styles.reelControls}>
+                {([-1, 1] as const).map((direction) => (
+                  <Pressable
+                    key={direction}
+                    onPressIn={() => {
+                      holdingRef.current = true;
+                      reelDirectionRef.current = direction;
+                      setIsReeling(true);
+                      vibrate("tap");
+                    }}
+                    onPressOut={() => {
+                      holdingRef.current = false;
+                      reelDirectionRef.current = 0;
+                      setIsReeling(false);
+                    }}
+                    style={({ pressed }) => [styles.reelButton, fishDirection === direction && styles.reelSuggested, pressed && styles.reelPressed]}
+                  >
+                    <Text style={styles.reelArrow}>{direction < 0 ? "←" : "→"}</Text>
+                    <Text style={styles.reelText}>{direction < 0 ? "左へ巻く" : "右へ巻く"}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.reelSubText}>魚と同じ方向なら捕獲が進み、逆方向では大きく逃げられます</Text>
             </>}
           </View>
         )}
@@ -557,7 +696,7 @@ export default function FishScreen() {
             <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
             <Text style={styles.name}>{last.name}</Text>
             <Text style={styles.size}>{last.size.toLocaleString()} cm</Text>
-            <Text style={styles.muted}>ポイント付与なし ・ {last.aquarium}へ格納</Text>
+            <Text style={styles.muted}>ポイント付与なし ・ {spot?.name}図鑑へ登録</Text>
             <View style={styles.resultActions}>
               <View style={styles.resultAction}><Button title="釣りをやめる" kind="secondary" onPress={exitFishing} /></View>
               <View style={styles.resultAction}><Button title="続けて釣る" onPress={cast} /></View>
@@ -620,6 +759,18 @@ const styles = StyleSheet.create({
   waveBand: { position: "absolute", top: "35%", left: -35, right: -35, height: 24, borderTopWidth: 3, borderBottomWidth: 1, borderColor: "rgba(255,255,255,.36)", borderRadius: 50, backgroundColor: "rgba(33,182,168,.13)" },
   rainLayer: { position: "absolute", top: -520, right: 0, left: 0, height: 620 },
   rainDrop: { position: "absolute", width: 1.5, height: 24, borderRadius: 2, backgroundColor: "rgba(220,247,255,.38)", transform: [{ rotate: "12deg" }] },
+  firstPersonLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 2, overflow: "hidden" },
+  waterGlint: { position: "absolute", left: -40, right: -40, top: "38%", height: 86, borderTopWidth: 2, borderBottomWidth: 1, borderColor: "rgba(218,252,255,.42)", backgroundColor: "rgba(0,140,164,.10)", transform: [{ rotate: "-2deg" }] },
+  waterRipple: { position: "absolute", top: "44%", left: "50%", width: 90, height: 26, marginLeft: -45, borderRadius: 50, borderWidth: 3, borderColor: "rgba(220,255,255,.8)", backgroundColor: "rgba(46,195,211,.12)" },
+  jumpingFish: { position: "absolute", top: "42%", zIndex: 4, alignItems: "center", justifyContent: "center" },
+  fishSplash: { position: "absolute", bottom: -22, alignItems: "center" },
+  fishSplashText: { fontSize: 42 },
+  rodRig: { position: "absolute", left: "4%", right: "4%", top: "6%", bottom: -95, zIndex: 5, transformOrigin: "bottom center" },
+  rodImage: { width: "100%", height: "100%" },
+  reelSpinner: { position: "absolute", bottom: "14%", left: "34%", width: 58, height: 58, borderRadius: 29, borderWidth: 4, borderColor: "rgba(255,214,100,.82)", backgroundColor: "rgba(5,31,40,.25)", alignItems: "center", justifyContent: "center" },
+  reelSpoke: { position: "absolute", width: 45, height: 4, borderRadius: 4, backgroundColor: "rgba(255,255,255,.82)" },
+  tensionFlash: { position: "absolute", top: "27%", alignSelf: "center", width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center", backgroundColor: colors.coral, borderWidth: 4, borderColor: colors.white },
+  tensionFlashText: { color: colors.white, fontSize: 34, lineHeight: 38, fontWeight: "900" },
   topHud: { position: "absolute", top: 12, left: 12, right: 12, backgroundColor: "rgba(6,59,76,.88)", borderRadius: 17, padding: 12 },
   hudTitle: { color: colors.white, fontSize: 19, fontWeight: "900" },
   hudText: { color: "#D7F5F2", fontSize: 11, fontWeight: "700", marginTop: 2 },
@@ -668,6 +819,14 @@ const styles = StyleSheet.create({
   rageText: { color: colors.white, textAlign: "center", fontSize: 11, fontWeight: "900" },
   fishActionBanner: { borderRadius: 9, paddingVertical: 5, backgroundColor: "#FFF0B8", borderWidth: 1, borderColor: "#E9B949" },
   fishActionText: { color: "#8B4A00", textAlign: "center", fontSize: 11, fontWeight: "900" },
+  directionCallout: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 13, paddingHorizontal: 11, paddingVertical: 7, backgroundColor: colors.navy },
+  directionArrow: { width: 42, color: "#FFD963", fontSize: 38, lineHeight: 40, fontWeight: "900", textAlign: "center" },
+  directionCopy: { flex: 1 },
+  directionTitle: { color: colors.white, fontSize: 14, fontWeight: "900" },
+  directionHelp: { color: "#BDE9E4", fontSize: 9, fontWeight: "700", marginTop: 1 },
+  timingFeedback: { width: 70, color: colors.gold, fontSize: 12, fontWeight: "900", textAlign: "right" },
+  perfectFeedback: { color: "#52E486", fontSize: 15 },
+  missFeedback: { color: "#FF7368" },
   distanceLabels: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: -5 },
   distanceLabel: { color: colors.muted, fontSize: 9, fontWeight: "800" },
   distanceTitle: { color: colors.navy, fontSize: 11, fontWeight: "900" },
@@ -688,10 +847,13 @@ const styles = StyleSheet.create({
   progressFill: { height: "100%", backgroundColor: colors.gold },
   progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
   bossProgressText: { color: "#8B2B24" },
-  reelButton: { backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 17, alignItems: "center", marginTop: 2 },
+  reelControls: { flexDirection: "row", gap: 9 },
+  reelButton: { flex: 1, minHeight: 67, backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
+  reelSuggested: { borderColor: "#FFD963", backgroundColor: "#087C88" },
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
-  reelText: { color: colors.white, fontWeight: "900", fontSize: 16 },
-  reelSubText: { color: "rgba(255,255,255,.8)", fontWeight: "700", fontSize: 10, marginTop: 2 },
+  reelArrow: { color: "#FFD963", fontSize: 22, lineHeight: 23, fontWeight: "900" },
+  reelText: { color: colors.white, fontWeight: "900", fontSize: 14 },
+  reelSubText: { color: colors.muted, fontWeight: "700", fontSize: 9, textAlign: "center" },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
   areaClear: { alignSelf: "stretch", borderRadius: 16, padding: 11, alignItems: "center", backgroundColor: "#122F48", borderWidth: 2, borderColor: "#F0B83F" },
   areaClearTitle: { color: "#FFD963", fontSize: 23, fontWeight: "900", letterSpacing: 1.2 },
