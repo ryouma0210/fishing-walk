@@ -187,16 +187,25 @@ function GridSprite({ source, index, columns, rows = columns, size }: {
 
 function PrefectureSprite({ source, index, size }: { source: number; index: number; size: number }) {
   const resolved = Image.resolveAssetSource(source);
-  const cellAspect = (resolved.width * 2) / Math.max(1, resolved.height * 5);
-  const frameSize = size;
-  const cellWidth = cellAspect >= 1 ? frameSize : frameSize * cellAspect;
-  const cellHeight = cellAspect >= 1 ? frameSize / cellAspect : frameSize;
+  const columns = 5;
+  const rows = 2;
+  const sheetWidth = size * columns;
+  const sheetHeight = sheetWidth * (resolved.height / Math.max(1, resolved.width));
+  const cellHeight = sheetHeight / rows;
   const column = index % 5;
   const row = Math.floor(index / 5);
-  return <View style={{ width:size, height:size, overflow:"hidden", alignItems:"center", justifyContent:"center" }}>
-    <View style={{ width:frameSize, height:frameSize, overflow:"hidden" }}>
-      <Image source={source} resizeMode="stretch" style={{ position:"absolute", width:cellWidth*5, height:cellHeight*2, left:(frameSize-cellWidth)/2-column*cellWidth, top:(frameSize-cellHeight)/2-row*cellHeight }} />
-    </View>
+  return <View style={{ width:size, height:size, overflow:"hidden" }}>
+    <Image
+      source={source}
+      resizeMode="stretch"
+      style={{
+        position:"absolute",
+        width:sheetWidth,
+        height:sheetHeight,
+        left:-column * size,
+        top:-row * cellHeight - (cellHeight - size) / 2,
+      }}
+    />
   </View>;
 }
 
