@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Image, ImageBackground, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useAudioPlayer } from "expo-audio";
+import { AudioPlayer, useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { Button } from "../../src/components/ui";
 import { FishArt, FishingSpotArt } from "../../src/components/GameArt";
@@ -33,6 +33,12 @@ type CatchResult = {
 type BattleConfig = { zone: number; seconds: number; pull: number };
 const bossCutin = require("../../assets/game/boss-cutin.png");
 const firstPersonRod = require("../../assets/game/first-person-rod.png");
+
+function startLoopMusic(player: AudioPlayer, volume: number) {
+  player.loop = true;
+  player.volume = volume;
+  void player.seekTo(0).then(() => player.play());
+}
 
 const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
   E: { zone: 30, seconds: 15, pull: 0.65 },
@@ -204,6 +210,9 @@ export default function FishScreen() {
   const catchSound = useAudioPlayer(require("../../assets/audio/catch.wav"));
   const escapeSound = useAudioPlayer(require("../../assets/audio/escape.wav"));
   const bossMusic = useAudioPlayer(require("../../assets/audio/boss-battle.wav"));
+  const fishingMusic = useAudioPlayer(require("../../assets/audio/bgm-fishing.wav"));
+  const battleMusic = useAudioPlayer(require("../../assets/audio/bgm-battle.wav"));
+  const resultMusic = useAudioPlayer(require("../../assets/audio/bgm-result.wav"));
   const holdingRef = useRef(false);
   const reelDirectionRef = useRef<-1 | 0 | 1>(0);
   const fishDirectionRef = useRef<-1 | 1>(1);
@@ -521,6 +530,14 @@ export default function FishScreen() {
 
   const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
   const isBossBattle = Boolean(candidate && candidate.id === spot?.bossFishId);
+  useEffect(() => {
+    const players = [fishingMusic, battleMusic, resultMusic];
+    players.forEach((player) => player.pause());
+    if (settings.soundVolume <= 0 || (phase === "battle" && isBossBattle)) return;
+    const player = phase === "battle" ? battleMusic : phase === "result" ? resultMusic : fishingMusic;
+    startLoopMusic(player, Math.min(0.48, settings.soundVolume * 0.55));
+    return () => player.pause();
+  }, [battleMusic, fishingMusic, isBossBattle, phase, resultMusic, settings.soundVolume]);
   const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3) * (isBossBattle ? [1, 0.76, 0.58][bossStage - 1] : 1);
   const effectiveSeconds = candidate ? battleSeconds(candidate.rank, gear) : config.seconds;
   const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));

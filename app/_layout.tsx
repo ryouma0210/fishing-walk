@@ -5,6 +5,7 @@ import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } fr
 import { db } from "../src/database/db";
 import { colors } from "../src/constants/theme";
 import { syncTodaySteps } from "../src/services/stepService";
+import { BackgroundMusic } from "../src/components/BackgroundMusic";
 
 const teaImage = require("../assets/game/startup-tea.png");
 
@@ -28,6 +29,7 @@ export default function RootLayout() {
 
   return <>
     <StatusBar style="dark" />
+    <BackgroundMusic />
     <Stack screenOptions={{ headerShown: false }} />
     <Modal visible={showGreeting} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowGreeting(false)}>
       <View style={styles.backdrop}>

@@ -7,19 +7,26 @@ import { FISHING_AREAS } from "../src/constants/areas";
 import { FISH } from "../src/constants/game";
 import { colors } from "../src/constants/theme";
 import { CatchSummary, getCatchSummaries, getTotalSteps } from "../src/database/db";
+import { ChapterId } from "../src/constants/expansionData";
 
 export default function BossDexScreen() {
   const router = useRouter();
   const [catches, setCatches] = useState<CatchSummary[]>([]);
   const [totalSteps, setTotalSteps] = useState(0);
   const [expandedArea, setExpandedArea] = useState<string | null>(null);
+  const [story, setStory] = useState<ChapterId>("japan");
 
   useFocusEffect(useCallback(() => {
     Promise.all([getCatchSummaries(), getTotalSteps()]).then(([rows, steps]) => { setCatches(rows); setTotalSteps(steps); }).catch(() => setCatches([]));
   }, []));
 
   const catchByFish = useMemo(() => new Map(catches.map((row) => [row.fish_id, row])), [catches]);
-  const bosses = FISHING_AREAS.map((area) => ({ area, fish: FISH.find((fish) => fish.id === area.bossFishId)! }));
+  const japanClear = catchByFish.has("jp_okinawa_sss");
+  const worldFinalBoss = FISHING_AREAS.filter((area) => area.story === "world").at(-1)?.bossFishId;
+  const worldClear = Boolean(worldFinalBoss && catchByFish.has(worldFinalBoss));
+  const chapterIsOpen = story === "japan" || (story === "world" && japanClear) || (story === "space" && worldClear);
+  const chapterAreas = FISHING_AREAS.filter((area) => area.story === story);
+  const bosses = chapterAreas.map((area) => ({ area, fish: FISH.find((fish) => fish.id === area.bossFishId)! }));
   const caughtCount = bosses.filter(({ fish }) => catchByFish.has(fish.id)).length;
 
   return (
@@ -28,10 +35,11 @@ export default function BossDexScreen() {
         <Header title="ヌシ・全国図鑑" sub={`ヌシ ${caughtCount} / ${bosses.length}体 捕獲`} />
         <Button title="閉じる" kind="secondary" onPress={() => router.back()} />
       </View>
+      <View style={styles.chapterTabs}>{(["japan","world","space"] as ChapterId[]).map((id) => <Pressable key={id} onPress={() => { setStory(id); setExpandedArea(null); }} style={[styles.chapterTab, story === id && styles.activeChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編 47" : id === "world" ? "世界編 50" : "宇宙編 50"}</Text></Pressable>)}</View>
       <Text style={styles.sectionTitle}>ヌシ図鑑</Text>
       {bosses.map(({ area, fish }, index) => {
         const caught = catchByFish.get(fish.id);
-        const unlocked = totalSteps >= area.requiredSteps;
+        const unlocked = chapterIsOpen && totalSteps >= area.requiredSteps;
         return (
           <Card key={fish.id} style={{ ...styles.card, ...(!caught ? styles.uncaughtCard : {}) }}>
             <View style={styles.artFrame}>
@@ -53,14 +61,14 @@ export default function BossDexScreen() {
           </Card>
         );
       })}
-      <Text style={styles.sectionTitle}>各都道府県の図鑑</Text>
-      {FISHING_AREAS.map((area, index) => {
-        const unlocked = totalSteps >= area.requiredSteps;
+      <Text style={styles.sectionTitle}>{story === "japan" ? "都道府県図鑑" : story === "world" ? "世界エリア図鑑" : "宇宙エリア図鑑"}</Text>
+      {chapterAreas.map((area, index) => {
+        const unlocked = chapterIsOpen && totalSteps >= area.requiredSteps;
         const discovered = area.fishIds.filter((id) => catchByFish.has(id)).length;
         const expanded = expandedArea === area.id;
         return <Card key={`dex-${area.id}`}>
           <Pressable onPress={() => unlocked && setExpandedArea(expanded ? null : area.id)} style={styles.areaHeader}>
-            <View><Text style={styles.prefectureIndex}>{index + 1}/47</Text><Text style={styles.prefectureName}>{unlocked ? area.name : "？？？"}</Text></View>
+            <View><Text style={styles.prefectureIndex}>{index + 1}/{chapterAreas.length}</Text><Text style={styles.prefectureName}>{unlocked ? area.name : "？？？"}</Text></View>
             <View style={styles.areaProgress}><Text style={styles.areaProgressText}>{unlocked ? `${discovered}/10` : "🔒"}</Text><Text style={styles.openText}>{unlocked ? expanded ? "閉じる" : "図鑑を見る" : `${area.requiredSteps.toLocaleString()}歩`}</Text></View>
           </Pressable>
           {expanded && <View style={styles.fishGrid}>{area.fishIds.map((fishId) => {
@@ -92,6 +100,11 @@ const styles = StyleSheet.create({
   recordLabel: { color: colors.muted, fontSize: 9, fontWeight: "800" },
   recordValue: { color: colors.ink, fontSize: 12, fontWeight: "900" },
   sectionTitle: { color: colors.navy, fontSize: 21, fontWeight: "900", marginTop: 8 },
+  chapterTabs: { flexDirection: "row", gap: 6 },
+  chapterTab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 13, backgroundColor: colors.foam },
+  activeChapterTab: { backgroundColor: colors.ocean },
+  chapterTabText: { color: colors.navy, fontSize: 10, fontWeight: "900" },
+  activeChapterTabText: { color: colors.white },
   areaHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   prefectureIndex: { color: colors.ocean, fontSize: 9, fontWeight: "900" },
   prefectureName: { color: colors.navy, fontSize: 20, fontWeight: "900" },
