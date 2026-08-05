@@ -152,14 +152,16 @@ function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, 
   }, [active, reelTurn, reeling]);
 
   if (!active) return null;
-  const rodX = rodLean.interpolate({ inputRange: [-1, 1], outputRange: [-24, 24] });
-  const rodRotate = rodLean.interpolate({ inputRange: [-1, 1], outputRange: ["-5deg", "5deg"] });
+  const rodX = rodLean.interpolate({ inputRange: [-1, 0, 1], outputRange: [-7, 0, 7] });
+  const rodRotate = rodLean.interpolate({ inputRange: [-1, 0, 1], outputRange: ["-22deg", "0deg", "22deg"] });
   const jumpY = jump.interpolate({ inputRange: [0, .52, 1], outputRange: [4, -135, 0] });
   const jumpRotate = jump.interpolate({ inputRange: [0, .5, 1], outputRange: ["-8deg", fishDirection < 0 ? "-28deg" : "28deg", "8deg"] });
   const fishOpacity = jump.interpolate({ inputRange: [0, .08, .9, 1], outputRange: [0, 1, 1, 0] });
   const rippleScale = ripple.interpolate({ inputRange: [0, 1], outputRange: [.35, 1.8] });
   const rippleOpacity = ripple.interpolate({ inputRange: [0, .72, 1], outputRange: [.65, .25, 0] });
   const reelRotate = reelTurn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  const spoolRotate = reelTurn.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "-720deg"] });
+  const reelPulse = reelTurn.interpolate({ inputRange: [0, .5, 1], outputRange: [1, 1.06, 1] });
   return (
     <View pointerEvents="none" style={styles.firstPersonLayer}>
       <View style={styles.waterGlint} />
@@ -172,7 +174,18 @@ function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, 
       )}
       <Animated.View style={[styles.rodRig, { transform: [{ translateX: rodX }, { rotate: rodRotate }, { scale: danger ? 1.035 : 1 }] }]}>
         <Image source={firstPersonRod} resizeMode="contain" style={styles.rodImage} />
-        <Animated.View style={[styles.reelSpinner, { transform: [{ rotate: reelRotate }] }]}><View style={styles.reelSpoke} /><View style={[styles.reelSpoke, { transform: [{ rotate: "90deg" }] }]} /></Animated.View>
+        <Animated.View style={[styles.reelHousing, { transform: [{ scale: reeling ? reelPulse : 1 }] }]}>
+          <Animated.View style={[styles.reelSpool, { transform: [{ rotate: spoolRotate }] }]}>
+            <View style={styles.reelSpoolLine} />
+            <View style={[styles.reelSpoolLine, { transform: [{ rotate: "60deg" }] }]} />
+            <View style={[styles.reelSpoolLine, { transform: [{ rotate: "120deg" }] }]} />
+            <View style={styles.reelHub} />
+          </Animated.View>
+          <Animated.View style={[styles.reelHandle, { transform: [{ rotate: reelRotate }] }]}>
+            <View style={styles.reelHandleArm} />
+            <View style={styles.reelHandleKnob} />
+          </Animated.View>
+        </Animated.View>
       </Animated.View>
       {danger && <View style={styles.tensionFlash}><Text style={styles.tensionFlashText}>!</Text></View>}
     </View>
@@ -228,6 +241,7 @@ export default function FishScreen() {
   const bossStageRef = useRef(1);
   const bossRageRef = useRef(false);
   const fishActionRef = useRef("");
+  const nextDirectionChangeAtRef = useRef(0);
   const [unlockAnimation] = useState(() => new Animated.Value(0));
 
   const playSound = useCallback((player: typeof reelSound) => {
@@ -380,6 +394,9 @@ export default function FishScreen() {
     setTimingFeedback("魚の動きを見て左右を選べ！");
     reelDirectionRef.current = 0;
     fishDirectionRef.current = 1;
+    fishXRef.current = 50;
+    setFishX(50);
+    nextDirectionChangeAtRef.current = Date.now() + 700 + Math.random() * 1300;
     setIsReeling(false);
     setRodDirection(0);
     fishActionRef.current = "";
@@ -442,17 +459,20 @@ export default function FishScreen() {
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
       const stage = isBoss ? progressRef.current < 34 ? 1 : progressRef.current < 67 ? 2 : 3 : 1;
-      const directionPeriod = isBoss ? Math.max(1150, 2500 - stage * 300) : Math.max(1450, 3100 - RANK_INDEX[candidate.rank] * 190);
       const personalitySeed = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0);
-      const movementWave = elapsed / directionPeriod * Math.PI * 2 + personalitySeed;
-      const direction: -1 | 1 = Math.cos(movementWave) < 0 ? -1 : 1;
-      if (direction !== fishDirectionRef.current) {
+      if (Date.now() >= nextDirectionChangeAtRef.current) {
+        const previousDirection = fishDirectionRef.current;
+        const direction: -1 | 1 = Math.random() < .68 ? previousDirection : previousDirection === 1 ? -1 : 1;
         fishDirectionRef.current = direction;
         setFishDirection(direction);
-        setTimingFeedback("！ 方向転換");
-        playSound(tensionSound);
-        vibrate("warning");
+        nextDirectionChangeAtRef.current = Date.now() + (isBoss ? 480 + Math.random() * 1250 : 700 + Math.random() * 1900);
+        if (direction !== previousDirection) {
+          setTimingFeedback("！ 方向転換");
+          playSound(tensionSound);
+          vibrate("warning");
+        }
       }
+      const direction = fishDirectionRef.current;
       if (stage !== bossStageRef.current) {
         bossStageRef.current = stage;
         setBossStage(stage);
@@ -478,8 +498,16 @@ export default function FishScreen() {
         setFishAction(actionName);
         if (actionName) vibrate("warning");
       }
-      const irregular = personality === 3 && actionActive ? Math.sin(elapsed / 75) * 9 : 0;
-      const nextX = Math.max(10, Math.min(86, 48 + Math.sin(movementWave) * 34 + irregular));
+      const rageJolt = rageTick ? direction * .42 : 0;
+      const irregular = personality === 3 && actionActive ? Math.sin(elapsed / 75) * .52 : 0;
+      let nextX = fishXRef.current + direction * (isBoss ? .16 + stage * .025 : .13) + rageJolt + irregular;
+      if (nextX <= 9 || nextX >= 84) {
+        const bouncedDirection: -1 | 1 = nextX <= 9 ? 1 : -1;
+        fishDirectionRef.current = bouncedDirection;
+        setFishDirection(bouncedDirection);
+        nextDirectionChangeAtRef.current = Date.now() + 500 + Math.random() * 1100;
+        nextX = Math.max(9, Math.min(84, nextX));
+      }
       fishXRef.current = nextX;
       setFishX(nextX);
       const selectedDirection = reelDirectionRef.current;
@@ -593,7 +621,12 @@ export default function FishScreen() {
         <View style={styles.waterOverlay}>
           {(phase === "casting" || phase === "approach" || phase === "bite") && <View style={styles.approachMessageBubble}><Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入…" : phase === "bite" ? "魚が食いついた！" : approachProgress < 55 ? "魚影が近づいている…" : "ウキのすぐ近く！"}</Text></View>}
           {(phase === "approach" || phase === "bite" || phase === "battle") && (
-            <View style={[styles.shadow, phase === "battle" && styles.battleShadow, { left:`${Math.max(8, Math.min(82, fishX))}%`, transform: [{ scale: phase === "battle" ? (isBossBattle ? 1.65 : 1.18) : 0.45 + shadowScale * 0.7 }, { scaleX:fishDirection }] }]}><View style={styles.shadowTail} /></View>
+            <View style={[styles.shadow, phase === "battle" && styles.battleShadow, { left:`${Math.max(8, Math.min(82, fishX))}%`, transform: [{ scale: phase === "battle" ? (isBossBattle ? 1.65 : 1.18) : 0.45 + shadowScale * 0.7 }, { scaleX:fishDirection }] }]}>
+              <View style={styles.shadowSnout} />
+              <View style={styles.shadowEye} />
+              <View style={styles.shadowDorsal} />
+              <View style={styles.shadowTail} />
+            </View>
           )}
           {(phase === "casting" || phase === "approach" || phase === "bite") && (
             <View style={[styles.float, phase === "bite" && styles.floatDown]}><View style={styles.floatRed} /></View>
@@ -632,7 +665,6 @@ export default function FishScreen() {
               {isBossBattle && <View style={styles.bossPhases}>{[1, 2, 3].map((stage) => <View key={stage} style={[styles.bossPhase, bossStage >= stage && styles.bossPhaseActive]}><Text style={styles.bossPhaseText}>{stage}</Text></View>)}</View>}
               {bossRage && <View style={styles.rageBanner}><Text style={styles.rageText}>⚠ ヌシが大暴れしている！</Text></View>}
               {!bossRage && fishAction && <View style={styles.fishActionBanner}><Text style={styles.fishActionText}>！ {fishAction}</Text></View>}
-              <View style={styles.compactDirection}><Text style={styles.compactArrow}>{fishDirection < 0 ? "←" : "→"}</Text><Text style={styles.compactDirectionText}>魚影が{fishDirection < 0 ? "左" : "右"}へ移動中　同じ側へ竿を寝かせる</Text></View>
               <View style={styles.reelControls}>
                 {([-1, 1] as const).map((direction) => (
                   <Pressable
@@ -746,8 +778,13 @@ const styles = StyleSheet.create({
   fishSplashText: { fontSize: 42 },
   rodRig: { position: "absolute", left: "4%", right: "4%", top: "6%", bottom: -95, zIndex: 5, transformOrigin: "bottom center" },
   rodImage: { width: "100%", height: "100%" },
-  reelSpinner: { position: "absolute", bottom: "14%", left: "34%", width: 58, height: 58, borderRadius: 29, borderWidth: 4, borderColor: "rgba(255,214,100,.82)", backgroundColor: "rgba(5,31,40,.25)", alignItems: "center", justifyContent: "center" },
-  reelSpoke: { position: "absolute", width: 45, height: 4, borderRadius: 4, backgroundColor: "rgba(255,255,255,.82)" },
+  reelHousing: { position:"absolute", bottom:"13%", left:"31%", width:76, height:76, borderRadius:38, backgroundColor:"rgba(3,25,35,.72)", borderWidth:3, borderColor:"rgba(255,214,100,.92)", alignItems:"center", justifyContent:"center", shadowColor:"#00141D", shadowOpacity:.7, shadowRadius:7, elevation:8 },
+  reelSpool: { width:52, height:52, borderRadius:26, borderWidth:5, borderColor:"#79DCE2", backgroundColor:"rgba(8,74,88,.9)", alignItems:"center", justifyContent:"center", overflow:"hidden" },
+  reelSpoolLine: { position:"absolute", width:46, height:3, borderRadius:2, backgroundColor:"rgba(225,252,255,.86)" },
+  reelHub: { width:15, height:15, borderRadius:8, backgroundColor:"#FFD664", borderWidth:3, borderColor:"#FFF4BE", zIndex:2 },
+  reelHandle: { position:"absolute", width:72, height:72, alignItems:"center", justifyContent:"center" },
+  reelHandleArm: { position:"absolute", width:5, height:34, borderRadius:3, backgroundColor:"#F4B93F", top:3 },
+  reelHandleKnob: { position:"absolute", width:17, height:17, borderRadius:9, backgroundColor:"#172D35", borderWidth:3, borderColor:"#FFD664", top:-5 },
   tensionFlash: { position: "absolute", top: "27%", alignSelf: "center", width: 54, height: 54, borderRadius: 27, alignItems: "center", justifyContent: "center", backgroundColor: colors.coral, borderWidth: 4, borderColor: colors.white },
   tensionFlashText: { color: colors.white, fontSize: 34, lineHeight: 38, fontWeight: "900" },
   topHud: { position: "absolute", top: 12, left: 12, right: 12, backgroundColor: "rgba(6,59,76,.88)", borderRadius: 17, padding: 12 },
@@ -780,9 +817,12 @@ const styles = StyleSheet.create({
   approachHook: { position: "absolute", right: 2, top: 0, zIndex: 4 },
   approachHookIcon: { fontSize: 18 },
   approachMessage: { color: colors.muted, fontSize: 10, fontWeight: "800", textAlign: "center", marginTop: 5 },
-  shadow: { width: 82, height: 28, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: "52%" },
-  battleShadow: { top:"43%", width:96, height:34, backgroundColor:"rgba(1,27,42,.72)", borderWidth:2, borderColor:"rgba(141,225,231,.35)" },
-  shadowTail: { position:"absolute", right:-17, top:5, width:22, height:22, backgroundColor:"rgba(3,43,62,.58)", transform:[{rotate:"45deg"}] },
+  shadow: { width: 82, height: 30, borderRadius: 50, backgroundColor: "rgba(1,24,35,.76)", position: "absolute", top: "52%" },
+  battleShadow: { top:"43%", width:96, height:34, backgroundColor:"rgba(1,27,42,.82)", borderWidth:2, borderColor:"rgba(141,225,231,.35)" },
+  shadowSnout: { position:"absolute", right:-8, top:8, width:0, height:0, borderTopWidth:7, borderBottomWidth:7, borderLeftWidth:12, borderTopColor:"transparent", borderBottomColor:"transparent", borderLeftColor:"rgba(1,24,35,.82)" },
+  shadowEye: { position:"absolute", right:13, top:8, width:5, height:5, borderRadius:3, backgroundColor:"rgba(173,232,239,.9)", zIndex:2 },
+  shadowDorsal: { position:"absolute", right:28, top:-10, width:0, height:0, borderLeftWidth:12, borderRightWidth:5, borderBottomWidth:14, borderLeftColor:"transparent", borderRightColor:"transparent", borderBottomColor:"rgba(1,24,35,.8)", transform:[{rotate:"10deg"}] },
+  shadowTail: { position:"absolute", left:-18, top:2, width:0, height:0, borderTopWidth:13, borderBottomWidth:13, borderRightWidth:22, borderTopColor:"transparent", borderBottomColor:"transparent", borderRightColor:"rgba(1,24,35,.8)" },
   float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
   floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   floatDown: { top: "54%", height: 18 },
@@ -816,9 +856,6 @@ const styles = StyleSheet.create({
   directionCopy: { flex: 1 },
   directionTitle: { color: colors.white, fontSize: 14, fontWeight: "900" },
   directionHelp: { color: "#BDE9E4", fontSize: 9, fontWeight: "700", marginTop: 1 },
-  compactDirection: { minHeight:38, flexDirection:"row", alignItems:"center", gap:8, borderRadius:11, paddingHorizontal:10, backgroundColor:colors.navy },
-  compactArrow: { color:"#FFD963", fontSize:29, fontWeight:"900" },
-  compactDirectionText: { flex:1, color:colors.white, fontSize:11, fontWeight:"900" },
   timingFeedback: { width: 70, color: colors.gold, fontSize: 12, fontWeight: "900", textAlign: "right" },
   perfectFeedback: { color: "#52E486", fontSize: 15 },
   missFeedback: { color: "#FF7368" },
