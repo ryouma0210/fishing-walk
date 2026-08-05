@@ -5,10 +5,11 @@ import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { AnglerArt, GearArt } from "../../src/components/GameArt";
 import { FISHING_AREAS } from "../../src/constants/areas";
 import { GearKind, SHOP } from "../../src/constants/game";
-import { CatchSummary, equipItem, equipOutfitSet, getCatchStats, getCatchSummaries, getInventory, getWalkPoints, InventoryRow, unequipKind, unequipOutfit } from "../../src/database/db";
+import { CatchSummary, equipItem, equipOutfitSet, getCatchStats, getCatchSummaries, getInventory, getPlayerProgress, getWalkPoints, InventoryRow, unequipKind, unequipOutfit } from "../../src/database/db";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { colors } from "../../src/constants/theme";
 import { getDailyMissions } from "../../src/services/dailyService";
+import { calculatePlayerProgress, PlayerProgress } from "../../src/constants/player";
 
 export default function MyPage() {
   const router = useRouter();
@@ -19,14 +20,16 @@ export default function MyPage() {
   const [daily, setDaily] = useState({ completed: 0, total: 3, claimable: 0 });
   const [outfitStage, setOutfitStage] = useState(0);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => calculatePlayerProgress(0));
 
   useFocusEffect(useCallback(() => {
-    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints(), getInventory()]).then(async ([catchStats, catches, today, wallet, inventory]) => {
+    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints(), getInventory(), getPlayerProgress()]).then(async ([catchStats, catches, today, wallet, inventory, progression]) => {
       setStats(catchStats);
       setRows(catches);
       setSteps(today.steps);
       setPoints(wallet);
       setInventory(inventory);
+      setPlayerProgress(progression);
       setOutfitStage([1, 2, 3, 4].find((level) => ["hat", "top", "bottom", "shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${level}` && row.equipped === 1))) ?? 0);
       const missions = await getDailyMissions();
       setDaily({ completed: missions.filter((mission) => mission.claimed).length, total: missions.length, claimable: missions.filter((mission) => !mission.claimed && mission.current >= mission.target).length });
@@ -59,9 +62,14 @@ export default function MyPage() {
           <View style={styles.avatar}><Text style={styles.avatarText}>🎣</Text></View>
           <View style={styles.profileInfo}>
             <Text style={styles.playerName}>Fishing Walker</Text>
+            <Text style={styles.playerLevel}>LEVEL {playerProgress.level}</Text>
             <Text style={ui.muted}>今日 {steps.toLocaleString()}歩 · {points.toLocaleString()}pt</Text>
             <Text style={styles.titleText}>称号 {unlockedTitles}/{titles.length}</Text>
           </View>
+        </View>
+        <View style={styles.expBlock}>
+          <View style={ui.between}><Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text><Text style={styles.reelBonus}>巻き取り +{(playerProgress.reelBonusRate*100).toFixed(1)}%</Text></View>
+          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
         </View>
         <View style={styles.currentOutfit}><AnglerArt stage={outfitStage} height={170} /><View style={styles.outfitCopy}><Text style={styles.outfitLabel}>現在の衣装</Text><Text style={styles.outfitName}>{["普段着","ライトアングラー","ウォータープルーフ","ストームフィッシャー","海王スタイル"][outfitStage]}</Text><Text style={ui.muted}>エリア移動時もこの衣装で表示されます</Text></View></View>
       </Card>
@@ -151,7 +159,9 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 35 },
   profileInfo: { flex: 1 },
   playerName: { color: colors.navy, fontSize: 20, fontWeight: "900" },
+  playerLevel: { alignSelf:"flex-start", color:colors.white, fontSize:11, fontWeight:"900", marginVertical:3, paddingHorizontal:9, paddingVertical:3, borderRadius:99, backgroundColor:colors.ocean },
   titleText: { color: colors.coral, fontSize: 11, fontWeight: "900", marginTop: 4 },
+  expBlock: { gap:5 }, expLabel: { color:colors.muted, fontSize:9, fontWeight:"800" }, reelBonus: { color:colors.coral, fontSize:10, fontWeight:"900" }, expTrack: { height:9, borderRadius:9, overflow:"hidden", backgroundColor:colors.line }, expFill: { height:"100%", borderRadius:9, backgroundColor:colors.gold },
   currentOutfit: { flexDirection: "row", alignItems: "center", minHeight: 170, borderRadius: 17, overflow: "hidden", backgroundColor: colors.foam },
   outfitCopy: { flex: 1, paddingRight: 12 },
   outfitLabel: { color: colors.ocean, fontSize: 10, fontWeight: "900" },

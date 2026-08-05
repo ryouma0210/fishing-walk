@@ -11,11 +11,12 @@ import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
 import { colors, rankColors } from "../../src/constants/theme";
 import {
   consumeSelectedBait, getBaitInventory, getEquippedItems, getSelectedBait, getTodayCatchCount,
-  saveCatch, selectBait,
+  getPlayerProgress, saveCatch, selectBait,
 } from "../../src/database/db";
 import { getSelectedArea } from "../../src/services/areaService";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { AppSettings, DEFAULT_SETTINGS, getSettings } from "../../src/services/settingsService";
+import { calculatePlayerProgress, PlayerProgress } from "../../src/constants/player";
 
 type Phase = "idle" | "casting" | "approach" | "bite" | "battle" | "result" | "escaped";
 type CatchResult = {
@@ -29,6 +30,9 @@ type CatchResult = {
   closeCall: boolean;
   isBoss: boolean;
   unlockedAreaName?: string;
+  expGained: number;
+  playerLevel: number;
+  levelUp: boolean;
 };
 type BattleConfig = { zone: number; seconds: number; pull: number };
 const bossCutin = require("../../assets/game/boss-cutin.png");
@@ -51,6 +55,10 @@ const BATTLE_CONFIG: Record<Rank, BattleConfig> = {
   SSS: { zone: 6, seconds: 180, pull: 2.2 },
 };
 
+const RANK_START_DISTANCE: Record<Rank, number> = {
+  E:30, D:40, C:50, B:60, A:75, S:90, SS:110, SSS:150,
+};
+
 function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
   if (effect === "outfit") {
     const stage = [1, 2, 3, 4].find((level) =>
@@ -59,13 +67,6 @@ function effectPower(items: ShopItem[], effect: ShopItem["effect"]) {
     return stage ? stage * 4 : 0;
   }
   return items.filter((item) => item.effect === effect).reduce((sum, item) => sum + item.power, 0);
-}
-
-function battleSeconds(rank: Rank, items: ShopItem[]) {
-  const base = BATTLE_CONFIG[rank].seconds;
-  const rodRate = effectPower(items, "rod") * 0.05;
-  const reelRate = effectPower(items, "reel") * 0.04;
-  return base * (1 - rodRate) * (1 - reelRate);
 }
 
 function baitRank(steps: number, bait: ShopItem) {
@@ -103,10 +104,11 @@ function WeatherEffects({ speed }: { speed: number }) {
   );
 }
 
-function FirstPersonFishingLayer({ active, fishId, direction, reeling, danger, boss }: {
+function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, reeling, danger, boss }: {
   active: boolean;
   fishId?: string;
-  direction: -1 | 1;
+  fishDirection: -1 | 1;
+  rodDirection: -1 | 0 | 1;
   reeling: boolean;
   danger: boolean;
   boss: boolean;
@@ -118,12 +120,12 @@ function FirstPersonFishingLayer({ active, fishId, direction, reeling, danger, b
 
   useEffect(() => {
     Animated.spring(rodLean, {
-      toValue: active ? direction : 0,
+      toValue: active ? rodDirection : 0,
       speed: danger ? 26 : 13,
       bounciness: danger ? 15 : 8,
       useNativeDriver: true,
     }).start();
-  }, [active, danger, direction, rodLean]);
+  }, [active, danger, rodDirection, rodLean]);
 
   useEffect(() => {
     if (!active) { jump.setValue(0); ripple.setValue(0); return; }
@@ -153,7 +155,7 @@ function FirstPersonFishingLayer({ active, fishId, direction, reeling, danger, b
   const rodX = rodLean.interpolate({ inputRange: [-1, 1], outputRange: [-24, 24] });
   const rodRotate = rodLean.interpolate({ inputRange: [-1, 1], outputRange: ["-5deg", "5deg"] });
   const jumpY = jump.interpolate({ inputRange: [0, .52, 1], outputRange: [4, -135, 0] });
-  const jumpRotate = jump.interpolate({ inputRange: [0, .5, 1], outputRange: ["-8deg", direction < 0 ? "-28deg" : "28deg", "8deg"] });
+  const jumpRotate = jump.interpolate({ inputRange: [0, .5, 1], outputRange: ["-8deg", fishDirection < 0 ? "-28deg" : "28deg", "8deg"] });
   const fishOpacity = jump.interpolate({ inputRange: [0, .08, .9, 1], outputRange: [0, 1, 1, 0] });
   const rippleScale = ripple.interpolate({ inputRange: [0, 1], outputRange: [.35, 1.8] });
   const rippleOpacity = ripple.interpolate({ inputRange: [0, .72, 1], outputRange: [.65, .25, 0] });
@@ -163,7 +165,7 @@ function FirstPersonFishingLayer({ active, fishId, direction, reeling, danger, b
       <View style={styles.waterGlint} />
       <Animated.View style={[styles.waterRipple, { opacity: rippleOpacity, transform: [{ scaleX: rippleScale }, { scaleY: rippleScale }] }]} />
       {fishId && (
-        <Animated.View style={[styles.jumpingFish, { left: direction < 0 ? "17%" : "58%", opacity: fishOpacity, transform: [{ translateY: jumpY }, { rotate: jumpRotate }, { scaleX: direction }] }]}>
+        <Animated.View style={[styles.jumpingFish, { left: fishDirection < 0 ? "17%" : "58%", opacity: fishOpacity, transform: [{ translateY: jumpY }, { rotate: jumpRotate }, { scaleX: fishDirection }] }]}>
           <FishArt fishId={fishId} size={boss ? 118 : 82} />
           <View style={styles.fishSplash}><Text style={styles.fishSplashText}>💦</Text></View>
         </Animated.View>
@@ -190,8 +192,6 @@ export default function FishScreen() {
   const [last, setLast] = useState<CatchResult | null>(null);
   const [shadowScale, setShadowScale] = useState(0);
   const [approachProgress, setApproachProgress] = useState(0);
-  const [cursor, setCursor] = useState(50);
-  const [targetCenter, setTargetCenter] = useState(50);
   const [battleProgress, setBattleProgress] = useState(0);
   const [escapeReason, setEscapeReason] = useState("魚に逃げられました");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -204,6 +204,9 @@ export default function FishScreen() {
   const [fishDirection, setFishDirection] = useState<-1 | 1>(1);
   const [timingFeedback, setTimingFeedback] = useState("");
   const [isReeling, setIsReeling] = useState(false);
+  const [rodDirection, setRodDirection] = useState<-1 | 0 | 1>(0);
+  const [fishX, setFishX] = useState(50);
+  const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => calculatePlayerProgress(0));
   const reelSound = useAudioPlayer(require("../../assets/audio/reel.wav"));
   const tensionSound = useAudioPlayer(require("../../assets/audio/tension.wav"));
   const splashSound = useAudioPlayer(require("../../assets/audio/splash.wav"));
@@ -216,10 +219,9 @@ export default function FishScreen() {
   const holdingRef = useRef(false);
   const reelDirectionRef = useRef<-1 | 0 | 1>(0);
   const fishDirectionRef = useRef<-1 | 1>(1);
+  const fishXRef = useRef(50);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cursorRef = useRef(50);
   const progressRef = useRef(0);
-  const targetRef = useRef(50);
   const finishingRef = useRef(false);
   const tensionAtRef = useRef(0);
   const reelAudioAtRef = useRef(0);
@@ -257,7 +259,7 @@ export default function FishScreen() {
   };
 
   const load = useCallback(async () => {
-    const [equipped, selectedArea, todaySteps, selectedBait, catches, savedSettings, baits] = await Promise.all([
+    const [equipped, selectedArea, todaySteps, selectedBait, catches, savedSettings, baits, progression] = await Promise.all([
       getEquippedItems(),
       getSelectedArea(),
       syncTodaySteps(),
@@ -265,6 +267,7 @@ export default function FishScreen() {
       getTodayCatchCount(new Date().toISOString().slice(0, 10)),
       getSettings(),
       getBaitInventory(),
+      getPlayerProgress(),
     ]);
     setGear(equipped);
     setSpot(selectedArea);
@@ -273,6 +276,7 @@ export default function FishScreen() {
     setTodayCatch(catches);
     setSettings(savedSettings);
     setBaitStock(Object.fromEntries(baits.map((item) => [item.item_id, item.quantity])));
+    setPlayerProgress(progression);
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -326,6 +330,8 @@ export default function FishScreen() {
     setCandidate(null);
     setShadowScale(0);
     setApproachProgress(0);
+    setFishX(18);
+    fishXRef.current = 18;
     setPhase("casting");
     vibrate("tap");
     timeoutRef.current = setTimeout(() => {
@@ -340,6 +346,9 @@ export default function FishScreen() {
         const progress = Math.min(100, step / approachSteps * 100);
         setApproachProgress(progress);
         setShadowScale(progress / 100);
+        const nextX = 18 + progress * .32 + Math.sin(step * .72) * (12 - progress * .06);
+        fishXRef.current = nextX;
+        setFishX(nextX);
         if (step >= approachSteps) {
           clearInterval(approach);
           setApproachProgress(100);
@@ -359,14 +368,10 @@ export default function FishScreen() {
   const startBattle = () => {
     if (!candidate || phase !== "bite") return;
     clearTimer();
-    cursorRef.current = 82;
-    targetRef.current = 34;
     progressRef.current = 0;
     bossStageRef.current = 1;
     bossRageRef.current = false;
     finishingRef.current = false;
-    setCursor(82);
-    setTargetCenter(34);
     setBattleProgress(0);
     setBossStage(1);
     setBossRage(false);
@@ -376,6 +381,7 @@ export default function FishScreen() {
     reelDirectionRef.current = 0;
     fishDirectionRef.current = 1;
     setIsReeling(false);
+    setRodDirection(0);
     fishActionRef.current = "";
     vibrate("tap");
     if (candidate.id === spot?.bossFishId) {
@@ -402,8 +408,9 @@ export default function FishScreen() {
     const sizeRoll = Math.min(1, Math.pow(Math.random(), 1 / (1 + sizePower * 0.22)));
     const size = Number((candidate.minCm + (candidate.maxCm - candidate.minCm) * sizeRoll).toFixed(1));
     const sizeRatio = (size - candidate.minCm) / Math.max(1, candidate.maxCm - candidate.minCm);
-    const closeCall = progressRef.current >= 96 && Math.abs(cursorRef.current - targetRef.current) > BATTLE_CONFIG[candidate.rank].zone * 0.38;
-    const isPersonalBest = await saveCatch({
+    const closeCall = Date.now() - tensionAtRef.current < 3000;
+    const previousLevel = playerProgress.level;
+    const catchSave = await saveCatch({
       fishId: candidate.id,
       size,
       rank: candidate.rank,
@@ -413,7 +420,8 @@ export default function FishScreen() {
       habitat: spot.habitat,
       steps,
     });
-    setLast({ ...candidate, size, isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall, isBoss, unlockedAreaName });
+    setPlayerProgress(catchSave.progression);
+    setLast({ ...candidate, size, isPersonalBest:catchSave.isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall, isBoss, unlockedAreaName, expGained:catchSave.expGained, playerLevel:catchSave.progression.level, levelUp:catchSave.progression.level > previousLevel });
     setTodayCatch((value) => value + 1);
     setPhase("result");
     setBossRage(false);
@@ -422,7 +430,7 @@ export default function FishScreen() {
     vibrate("success");
     load();
     void rankIndex;
-  }, [bossMusic, candidate, catchSound, gear, load, playSound, spot, steps, vibrate]);
+  }, [bossMusic, candidate, catchSound, gear, load, playSound, playerProgress.level, spot, steps, vibrate]);
 
   useEffect(() => {
     if (phase !== "battle" || !candidate) return;
@@ -430,16 +438,14 @@ export default function FishScreen() {
     const outfitPower = effectPower(gear, "outfit");
     const reelPower = effectPower(gear, "reel");
     const isBoss = candidate.id === spot?.bossFishId;
-    const baseEffectiveZone = Math.min(72, config.zone + reelPower * 3);
-    const effectiveSeconds = battleSeconds(candidate.rank, gear);
     const started = Date.now();
     const interval = setInterval(() => {
       const elapsed = Date.now() - started;
       const stage = isBoss ? progressRef.current < 34 ? 1 : progressRef.current < 67 ? 2 : 3 : 1;
       const directionPeriod = isBoss ? Math.max(1150, 2500 - stage * 300) : Math.max(1450, 3100 - RANK_INDEX[candidate.rank] * 190);
-      const directionEpoch = Math.floor(elapsed / directionPeriod);
       const personalitySeed = [...candidate.id].reduce((sum, value) => sum + value.charCodeAt(0), 0);
-      const direction: -1 | 1 = (directionEpoch + personalitySeed + (personalitySeed % 4 === 3 ? Math.floor(elapsed / 870) : 0)) % 2 === 0 ? -1 : 1;
+      const movementWave = elapsed / directionPeriod * Math.PI * 2 + personalitySeed;
+      const direction: -1 | 1 = Math.cos(movementWave) < 0 ? -1 : 1;
       if (direction !== fishDirectionRef.current) {
         fishDirectionRef.current = direction;
         setFishDirection(direction);
@@ -447,15 +453,12 @@ export default function FishScreen() {
         playSound(tensionSound);
         vibrate("warning");
       }
-      const target = direction < 0 ? 28 : 72;
       if (stage !== bossStageRef.current) {
         bossStageRef.current = stage;
         setBossStage(stage);
         playSound(splashSound);
         vibrate("warning");
       }
-      const stageZoneRate = isBoss ? [1, 0.76, 0.58][stage - 1] : 1;
-      const currentEffectiveZone = baseEffectiveZone * stageZoneRate;
       const rageTick = isBoss && elapsed > 3500 && elapsed % 9000 < 1700;
       if (rageTick !== bossRageRef.current) {
         bossRageRef.current = rageTick;
@@ -475,40 +478,26 @@ export default function FishScreen() {
         setFishAction(actionName);
         if (actionName) vibrate("warning");
       }
-      const burst = personality === 0 ? Math.sin(elapsed / 62) * (actionActive ? 1.45 : 0)
-        : personality === 1 ? (actionActive ? 2.3 : -0.1)
-          : personality === 2 ? (actionActive ? 0.72 : 0.18)
-            : actionActive ? Math.sin(elapsed / 85) * 2.05 : Math.sin(elapsed / 430) * 0.25;
-      const behaviorForce = personality === 1 && actionActive ? 0.65 : Math.max(-0.28, burst * 0.14);
-      targetRef.current = target;
-      const adjustedPull = config.pull * Math.max(0.5, 1 - outfitPower * 0.03) * (isBoss ? 1 + (stage - 1) * 0.16 : 1);
-      const rageForce = rageTick ? direction * 0.82 : 0;
-      const fishEscape = direction * (0.12 + adjustedPull * 0.055)
-        + behaviorForce * direction
-        + (Math.random() - 0.5) * adjustedPull * 0.08 + rageForce;
+      const irregular = personality === 3 && actionActive ? Math.sin(elapsed / 75) * 9 : 0;
+      const nextX = Math.max(10, Math.min(86, 48 + Math.sin(movementWave) * 34 + irregular));
+      fishXRef.current = nextX;
+      setFishX(nextX);
       const selectedDirection = reelDirectionRef.current;
       const matchingDirection = selectedDirection === direction;
-      const reelStrength = 0.48 + reelPower * 0.035;
-      const reel = selectedDirection === 0 ? 0
-        : matchingDirection ? (target - cursorRef.current) * 0.065 + direction * reelStrength * 0.08
-          : -(target - cursorRef.current) * 0.055;
       if (holdingRef.current && Date.now() - reelAudioAtRef.current > 320) {
         reelAudioAtRef.current = Date.now();
         playSound(reelSound);
       }
-      const rawCursor = cursorRef.current + reel + fishEscape;
-      const nextCursor = Math.max(0, Math.min(100, rawCursor));
-      cursorRef.current = nextCursor;
-      const inside = Math.abs(nextCursor - target) <= currentEffectiveZone / 2;
-      const perfect = Math.abs(nextCursor - target) <= currentEffectiveZone * 0.18;
-      const gain = 50 / (effectiveSeconds * 1000) * 100;
-      const controlRate = selectedDirection === 0 ? 0.35 : matchingDirection ? (perfect ? 1.85 : 1.15) : -1.6;
-      progressRef.current = Math.max(0, Math.min(100, progressRef.current + (inside ? gain * Math.max(.65, controlRate) : -gain * (matchingDirection ? .55 : 1.35))));
-      if (selectedDirection !== 0) setTimingFeedback(matchingDirection ? perfect ? "PERFECT!" : inside ? "GOOD!" : "追いつけ！" : "MISS! 逆方向！");
-      setCursor(nextCursor);
-      setTargetCenter(target);
+      const rankDifficulty = 1 + RANK_INDEX[candidate.rank] * .12;
+      const rodAssist = Math.max(.7, 1 - outfitPower * .012);
+      const rodPower = effectPower(gear, "rod");
+      const reelGain = (.25 + reelPower * .018 + rodPower * .014) / rankDifficulty * (1 + playerProgress.reelBonusRate);
+      const escapeLoss = (.025 + config.pull * .008) * rodAssist * (rageTick ? 3.2 : actionActive ? 1.65 : 1);
+      const change = selectedDirection === 0 ? -escapeLoss : matchingDirection ? reelGain : -escapeLoss * 4.2;
+      progressRef.current = Math.max(-15, Math.min(100, progressRef.current + change));
+      if (selectedDirection !== 0) setTimingFeedback(matchingDirection ? "GOOD! 距離が縮む" : "逆方向！魚が離れる");
       setBattleProgress(progressRef.current);
-      if ((nextCursor < 9 || nextCursor > 91) && Date.now() - tensionAtRef.current > 900) {
+      if (progressRef.current < 5 && Date.now() - tensionAtRef.current > 900) {
         tensionAtRef.current = Date.now();
         playSound(tensionSound);
         vibrate("warning");
@@ -516,9 +505,9 @@ export default function FishScreen() {
       if (progressRef.current >= 100) {
         clearInterval(interval);
         finishCatch();
-      } else if ((rawCursor <= 0 || rawCursor >= 100) && elapsed > 1800) {
+      } else if (progressRef.current <= -15 && elapsed > 1800) {
         clearInterval(interval);
-        setEscapeReason(rawCursor <= 0 ? "巻きすぎて糸が切れました" : "魚がゲージ外へ逃げ、糸が切れました");
+        setEscapeReason("魚との距離が開き、糸を切られました");
         playSound(escapeSound);
         vibrate("error");
         bossMusic.pause();
@@ -526,10 +515,12 @@ export default function FishScreen() {
       }
     }, 50);
     return () => clearInterval(interval);
-  }, [bossMusic, candidate, escapeSound, finishCatch, gear, phase, playSound, reelSound, splashSound, spot?.bossFishId, tensionSound, vibrate]);
+  }, [bossMusic, candidate, escapeSound, finishCatch, gear, phase, playSound, playerProgress.reelBonusRate, reelSound, splashSound, spot?.bossFishId, tensionSound, vibrate]);
 
-  const config = candidate ? BATTLE_CONFIG[candidate.rank] : BATTLE_CONFIG.E;
   const isBossBattle = Boolean(candidate && candidate.id === spot?.bossFishId);
+  const startDistance = candidate ? RANK_START_DISTANCE[candidate.rank] : RANK_START_DISTANCE.E;
+  const distanceProgress = Math.max(0, Math.min(100, battleProgress));
+  const remainingDistance = startDistance * (1 - distanceProgress / 100);
   useEffect(() => {
     const players = [fishingMusic, battleMusic, resultMusic];
     players.forEach((player) => player.pause());
@@ -538,12 +529,7 @@ export default function FishScreen() {
     startLoopMusic(player, Math.min(0.48, settings.soundVolume * 0.55));
     return () => player.pause();
   }, [battleMusic, fishingMusic, isBossBattle, phase, resultMusic, settings.soundVolume]);
-  const effectiveZone = Math.min(72, config.zone + effectPower(gear, "reel") * 3) * (isBossBattle ? [1, 0.76, 0.58][bossStage - 1] : 1);
-  const effectiveSeconds = candidate ? battleSeconds(candidate.rank, gear) : config.seconds;
-  const zoneLeft = Math.max(0, Math.min(100 - effectiveZone, targetCenter - effectiveZone / 2));
-  const inTargetZone = Math.abs(cursor - targetCenter) <= effectiveZone / 2;
-  const battleDanger = cursor < 10 || cursor > 90;
-  const captureColor = battleProgress >= 70 ? "#36C96B" : battleProgress >= 35 ? colors.gold : colors.coral;
+  const battleDanger = battleProgress < 5;
   const equippedCooler = gear.find((item) => item.kind === "cooler");
   const dailyCapacity = equippedCooler?.dailyCapacity ?? 10;
 
@@ -551,6 +537,7 @@ export default function FishScreen() {
     holdingRef.current = false;
     reelDirectionRef.current = 0;
     setIsReeling(false);
+    setRodDirection(0);
     clearTimer();
     setShowBaitPicker(false);
     setShowBossCutin(false);
@@ -576,12 +563,13 @@ export default function FishScreen() {
         <FirstPersonFishingLayer
           active={["casting", "approach", "bite", "battle"].includes(phase)}
           fishId={phase === "battle" ? candidate?.id : undefined}
-          direction={fishDirection}
+          fishDirection={fishDirection}
+          rodDirection={rodDirection}
           reeling={phase === "battle" && isReeling}
           danger={phase === "battle" && (battleDanger || bossRage)}
           boss={isBossBattle}
         />
-        <View style={styles.topHud}>
+        {phase === "idle" && <View style={styles.topHud}>
           <Text style={styles.hudTitle}>{spot?.emoji ?? "🌿"} {spot?.name ?? "釣り場"}</Text>
           <Text style={styles.hudText}>{HABITAT_NAMES[spot?.habitat ?? "pond"]} ・ 本日 {todayCatch}/{dailyCapacity}匹</Text>
           <Text style={styles.hudText}>{bait ? `${bait.name}／${bait.targetRanks?.join("・")}狙い` : "餌がありません"}</Text>
@@ -590,25 +578,22 @@ export default function FishScreen() {
               <Text style={styles.baitChangeText}>餌を変更</Text>
             </Pressable>
           )}
-        </View>
+        </View>}
+
+        {phase === "battle" && candidate && <View style={[styles.distanceHud, isBossBattle && styles.bossDistanceHud]}>
+          <View style={styles.distanceHudHeader}><Text style={styles.distanceHudTitle}>{candidate.rank}ランク・開始 {startDistance}m</Text><Text style={styles.distanceMeters}>残り {Math.ceil(remainingDistance)}m</Text></View>
+          <View style={styles.distanceGaugeTop}>
+            <View style={styles.distanceNear} /><View style={styles.distanceMid} /><View style={styles.distanceFar} />
+            <View style={styles.distancePerson}><Text style={styles.distancePersonIcon}>🎣</Text></View>
+            <View style={[styles.distanceFish, { left:`${Math.max(7, Math.min(94, 100 - distanceProgress))}%` }]}><Text style={styles.distanceFishIcon}>🐟</Text></View>
+          </View>
+          <Text style={styles.distanceHint}>{timingFeedback || "魚の方向へ竿を寝かせて巻く"}</Text>
+        </View>}
 
         <View style={styles.waterOverlay}>
-          {(phase === "casting" || phase === "approach" || phase === "bite") && (
-            <View style={styles.approachPanel}>
-              <View style={styles.approachHeader}>
-                <Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入中" : phase === "bite" ? "魚が食いついた！" : "魚が近づいています"}</Text>
-                <Text style={styles.approachPercent}>{Math.round(approachProgress)}%</Text>
-              </View>
-              <View style={styles.approachGauge}>
-                <View style={styles.approachGreen} /><View style={styles.approachYellow} /><View style={styles.approachRed} />
-                <View style={[styles.approachFish, { left: `${Math.max(2, Math.min(94, approachProgress))}%` }]}><Text style={styles.approachFishIcon}>🐟</Text></View>
-                <View style={styles.approachHook}><Text style={styles.approachHookIcon}>🪝</Text></View>
-              </View>
-              <Text style={styles.approachMessage}>{approachProgress < 35 ? "魚影がこちらへ向かっています" : approachProgress < 75 ? "ウキの近くまで来ました" : approachProgress < 100 ? "もうすぐ食いつきます！" : "今すぐ合わせてください！"}</Text>
-            </View>
-          )}
-          {(phase === "approach" || phase === "bite") && (
-            <View style={[styles.shadow, { transform: [{ scale: 0.45 + shadowScale * 0.7 }] }]} />
+          {(phase === "casting" || phase === "approach" || phase === "bite") && <View style={styles.approachMessageBubble}><Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入…" : phase === "bite" ? "魚が食いついた！" : approachProgress < 55 ? "魚影が近づいている…" : "ウキのすぐ近く！"}</Text></View>}
+          {(phase === "approach" || phase === "bite" || phase === "battle") && (
+            <View style={[styles.shadow, phase === "battle" && styles.battleShadow, { left:`${Math.max(8, Math.min(82, fishX))}%`, transform: [{ scale: phase === "battle" ? (isBossBattle ? 1.65 : 1.18) : 0.45 + shadowScale * 0.7 }, { scaleX:fishDirection }] }]}><View style={styles.shadowTail} /></View>
           )}
           {(phase === "casting" || phase === "approach" || phase === "bite") && (
             <View style={[styles.float, phase === "bite" && styles.floatDown]}><View style={styles.floatRed} /></View>
@@ -642,39 +627,12 @@ export default function FishScreen() {
             {phase === "battle" && candidate && <>
               <View style={styles.between}>
                 <Text style={[styles.rank, { color: isBossBattle ? "#FFD963" : rankColors[candidate.rank] }]}>{isBossBattle ? `👑 NUSHI PHASE ${bossStage}/3` : `${candidate.rank} RANK BATTLE`}</Text>
-                <Text style={styles.muted}>基準 {config.seconds}秒 → 装備後 {effectiveSeconds.toFixed(1)}秒</Text>
+                <Text style={styles.muted}>残り {Math.ceil(remainingDistance)}m / {startDistance}m</Text>
               </View>
               {isBossBattle && <View style={styles.bossPhases}>{[1, 2, 3].map((stage) => <View key={stage} style={[styles.bossPhase, bossStage >= stage && styles.bossPhaseActive]}><Text style={styles.bossPhaseText}>{stage}</Text></View>)}</View>}
               {bossRage && <View style={styles.rageBanner}><Text style={styles.rageText}>⚠ ヌシが大暴れしている！</Text></View>}
               {!bossRage && fishAction && <View style={styles.fishActionBanner}><Text style={styles.fishActionText}>！ {fishAction}</Text></View>}
-              <View style={styles.directionCallout}>
-                <Text style={styles.directionArrow}>{fishDirection < 0 ? "←" : "→"}</Text>
-                <View style={styles.directionCopy}>
-                  <Text style={styles.directionTitle}>魚が{fishDirection < 0 ? "左" : "右"}へ走る！</Text>
-                  <Text style={styles.directionHelp}>同じ方向のリールを長押し</Text>
-                </View>
-                <Text style={[styles.timingFeedback, timingFeedback === "PERFECT!" && styles.perfectFeedback, timingFeedback.startsWith("MISS") && styles.missFeedback]}>{timingFeedback}</Text>
-              </View>
-              <View style={styles.battleStatusRow}>
-                <Text style={styles.battleHelp}>方向転換を見切って魚を枠内へ</Text>
-                <Text style={[styles.battleStatus, inTargetZone && styles.battleStatusSafe, battleDanger && styles.battleStatusDanger]}>
-                  {battleDanger ? "糸切れ注意" : inTargetZone ? "捕獲中！" : cursor > targetCenter ? "魚が逃走中" : "巻きすぎ注意"}
-                </Text>
-              </View>
-              <View style={styles.distanceLabels}>
-                <Text style={styles.distanceLabel}>近い</Text><Text style={styles.distanceTitle}>魚との距離</Text><Text style={styles.distanceLabel}>遠い</Text>
-              </View>
-              <View style={[styles.gauge, isBossBattle && styles.bossGauge]}>
-                <View style={styles.distanceGreen} />
-                <View style={styles.distanceYellow} />
-                <View style={styles.distanceRed} />
-                <View style={[styles.targetZone, isBossBattle && styles.bossTargetZone, { left: `${zoneLeft}%`, width: `${effectiveZone}%` }]} />
-                <View style={styles.anglerCursor}><Text style={styles.anglerIcon}>🧍</Text></View>
-                <View style={[styles.fishCursor, { left: `${Math.max(4, Math.min(96, cursor))}%` }]}><Text style={styles.battleFishIcon}>🐟</Text></View>
-                {(bossRage || fishAction) && <View style={[styles.exclamationBubble, { left: `${Math.max(5, Math.min(92, cursor))}%` }]}><Text style={styles.exclamationText}>!</Text></View>}
-              </View>
-              <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${battleProgress}%`, backgroundColor: captureColor }]} /></View>
-              <Text style={[styles.progressText, isBossBattle && styles.bossProgressText]}>{isBossBattle ? `ヌシ攻略 ${Math.round(battleProgress)}%` : `捕獲 ${Math.round(battleProgress)}%`}</Text>
+              <View style={styles.compactDirection}><Text style={styles.compactArrow}>{fishDirection < 0 ? "←" : "→"}</Text><Text style={styles.compactDirectionText}>魚影が{fishDirection < 0 ? "左" : "右"}へ移動中　同じ側へ竿を寝かせる</Text></View>
               <View style={styles.reelControls}>
                 {([-1, 1] as const).map((direction) => (
                   <Pressable
@@ -683,21 +641,23 @@ export default function FishScreen() {
                       holdingRef.current = true;
                       reelDirectionRef.current = direction;
                       setIsReeling(true);
+                      setRodDirection(direction);
                       vibrate("tap");
                     }}
                     onPressOut={() => {
                       holdingRef.current = false;
                       reelDirectionRef.current = 0;
                       setIsReeling(false);
+                      setRodDirection(0);
                     }}
                     style={({ pressed }) => [styles.reelButton, fishDirection === direction && styles.reelSuggested, pressed && styles.reelPressed]}
                   >
                     <Text style={styles.reelArrow}>{direction < 0 ? "←" : "→"}</Text>
-                    <Text style={styles.reelText}>{direction < 0 ? "左へ巻く" : "右へ巻く"}</Text>
+                    <Text style={styles.reelText}>{direction < 0 ? "左へ竿を寝かせて巻く" : "右へ竿を寝かせて巻く"}</Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.reelSubText}>魚と同じ方向なら捕獲が進み、逆方向では大きく逃げられます</Text>
+              <Text style={styles.reelSubText}>魚影と同じ方向なら距離が縮み、逆方向や放置では魚が離れます</Text>
             </>}
           </View>
         )}
@@ -713,6 +673,8 @@ export default function FishScreen() {
             <Text style={[styles.rank, { color: rankColors[last.rank] }]}>{last.rank} RANK</Text>
             <Text style={styles.name}>{last.name}</Text>
             <Text style={styles.size}>{last.size.toLocaleString()} cm</Text>
+            <Text style={styles.expGain}>EXP +{last.expGained}　Lv.{last.playerLevel}</Text>
+            {last.levelUp && <Text style={styles.levelUp}>LEVEL UP! 巻き取り性能が上昇</Text>}
             <Text style={styles.muted}>ポイント付与なし ・ {spot?.name}図鑑へ登録</Text>
             <View style={styles.resultActions}>
               <View style={styles.resultAction}><Button title="釣りをやめる" kind="secondary" onPress={exitFishing} /></View>
@@ -793,7 +755,18 @@ const styles = StyleSheet.create({
   hudText: { color: "#D7F5F2", fontSize: 11, fontWeight: "700", marginTop: 2 },
   baitChangeButton: { position: "absolute", right: 10, bottom: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, backgroundColor: colors.coral },
   baitChangeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
+  distanceHud: { position:"absolute", top:8, left:10, right:10, zIndex:20, borderRadius:16, padding:10, backgroundColor:"rgba(255,255,255,.96)", borderWidth:2, borderColor:colors.navy, elevation:16 },
+  bossDistanceHud: { borderColor:"#E9B949", backgroundColor:"rgba(255,248,222,.97)" },
+  distanceHudHeader: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", marginBottom:5 },
+  distanceHudTitle: { color:colors.navy, fontSize:12, fontWeight:"900" },
+  distanceMeters: { color:colors.coral, fontSize:16, fontWeight:"900" },
+  distanceGaugeTop: { height:34, borderRadius:10, overflow:"hidden", borderWidth:2, borderColor:colors.navy, flexDirection:"row", position:"relative" },
+  distanceNear: { flex:1, backgroundColor:"#43D94D" }, distanceMid: { flex:1, backgroundColor:"#F4D83D" }, distanceFar: { flex:1, backgroundColor:"#FF654F" },
+  distancePerson: { position:"absolute", left:1, top:2, zIndex:3 }, distancePersonIcon: { fontSize:22 },
+  distanceFish: { position:"absolute", top:4, marginLeft:-12, zIndex:4 }, distanceFishIcon: { fontSize:19, transform:[{scaleX:-1}] },
+  distanceHint: { color:colors.muted, fontSize:9, fontWeight:"800", textAlign:"center", marginTop:4 },
   waterOverlay: { position: "absolute", top: "18%", left: 20, right: 20, height: "42%", alignItems: "center", justifyContent: "center" },
+  approachMessageBubble: { position:"absolute", top:0, alignSelf:"center", borderRadius:99, paddingHorizontal:15, paddingVertical:8, backgroundColor:"rgba(255,255,255,.9)", borderWidth:1, borderColor:colors.aqua },
   approachPanel: { position: "absolute", top: 0, left: 0, right: 0, borderRadius: 16, padding: 10, backgroundColor: "rgba(255,255,255,.94)", borderWidth: 2, borderColor: colors.navy },
   approachHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   approachTitle: { color: colors.navy, fontSize: 13, fontWeight: "900" },
@@ -808,11 +781,13 @@ const styles = StyleSheet.create({
   approachHookIcon: { fontSize: 18 },
   approachMessage: { color: colors.muted, fontSize: 10, fontWeight: "800", textAlign: "center", marginTop: 5 },
   shadow: { width: 82, height: 28, borderRadius: 50, backgroundColor: "rgba(3,43,62,.58)", position: "absolute", top: "52%" },
+  battleShadow: { top:"43%", width:96, height:34, backgroundColor:"rgba(1,27,42,.72)", borderWidth:2, borderColor:"rgba(141,225,231,.35)" },
+  shadowTail: { position:"absolute", right:-17, top:5, width:22, height:22, backgroundColor:"rgba(3,43,62,.58)", transform:[{rotate:"45deg"}] },
   float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
   floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   floatDown: { top: "54%", height: 18 },
   splash: { color: colors.white, fontWeight: "900", fontSize: 27, textShadowColor: colors.navy, textShadowRadius: 5 },
-  controlPanel: { position: "absolute", left: 12, right: 12, bottom: 12, backgroundColor: "rgba(255,255,255,.95)", borderRadius: 22, padding: 15, gap: 9 },
+  controlPanel: { position: "absolute", left: 10, right: 10, bottom: 10, zIndex:30, elevation:24, backgroundColor: "rgba(255,255,255,.98)", borderRadius: 20, padding: 12, gap: 7, borderWidth:1, borderColor:"rgba(4,58,73,.18)" },
   bossControlPanel: { backgroundColor: "rgba(255,248,222,.97)", borderWidth: 2, borderColor: "#E9B949" },
   panelTitle: { textAlign: "center", color: colors.navy, fontWeight: "900", fontSize: 20 },
   panelHelp: { textAlign: "center", color: colors.muted, fontWeight: "700", fontSize: 12 },
@@ -841,6 +816,9 @@ const styles = StyleSheet.create({
   directionCopy: { flex: 1 },
   directionTitle: { color: colors.white, fontSize: 14, fontWeight: "900" },
   directionHelp: { color: "#BDE9E4", fontSize: 9, fontWeight: "700", marginTop: 1 },
+  compactDirection: { minHeight:38, flexDirection:"row", alignItems:"center", gap:8, borderRadius:11, paddingHorizontal:10, backgroundColor:colors.navy },
+  compactArrow: { color:"#FFD963", fontSize:29, fontWeight:"900" },
+  compactDirectionText: { flex:1, color:colors.white, fontSize:11, fontWeight:"900" },
   timingFeedback: { width: 70, color: colors.gold, fontSize: 12, fontWeight: "900", textAlign: "right" },
   perfectFeedback: { color: "#52E486", fontSize: 15 },
   missFeedback: { color: "#FF7368" },
@@ -865,11 +843,11 @@ const styles = StyleSheet.create({
   progressText: { textAlign: "center", fontWeight: "900", color: colors.navy, marginTop: 4 },
   bossProgressText: { color: "#8B2B24" },
   reelControls: { flexDirection: "row", gap: 9 },
-  reelButton: { flex: 1, minHeight: 67, backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 8, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
+  reelButton: { flex: 1, minHeight: 62, backgroundColor: colors.ocean, borderRadius: 16, paddingVertical: 7, paddingHorizontal:5, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
   reelSuggested: { borderColor: "#FFD963", backgroundColor: "#087C88" },
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelArrow: { color: "#FFD963", fontSize: 22, lineHeight: 23, fontWeight: "900" },
-  reelText: { color: colors.white, fontWeight: "900", fontSize: 14 },
+  reelText: { color: colors.white, fontWeight: "900", fontSize: 11, textAlign:"center" },
   reelSubText: { color: colors.muted, fontWeight: "700", fontSize: 9, textAlign: "center" },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
   areaClear: { alignSelf: "stretch", borderRadius: 16, padding: 11, alignItems: "center", backgroundColor: "#122F48", borderWidth: 2, borderColor: "#F0B83F" },
@@ -885,6 +863,8 @@ const styles = StyleSheet.create({
   rank: { fontWeight: "900", fontSize: 14 },
   name: { fontSize: 27, fontWeight: "900", color: colors.ink },
   size: { fontSize: 20, fontWeight: "900", color: colors.ocean },
+  expGain: { color:colors.navy, fontSize:14, fontWeight:"900" },
+  levelUp: { color:colors.coral, fontSize:13, fontWeight:"900", paddingHorizontal:12, paddingVertical:5, borderRadius:99, backgroundColor:"#FFF0EA" },
   modalBackdrop: { flex: 1, justifyContent: "center", padding: 18, backgroundColor: "rgba(1,19,28,.78)" },
   baitModal: { borderRadius: 23, padding: 16, gap: 9, backgroundColor: colors.white },
   baitModalTitle: { color: colors.navy, fontSize: 21, fontWeight: "900", textAlign: "center" },

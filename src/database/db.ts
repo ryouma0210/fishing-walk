@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { GearKind, SHOP } from "../constants/game";
+import { calculatePlayerProgress, CATCH_EXP, PlayerProgress } from "../constants/player";
 
 export type CatchSummary = {
   fish_id: string;
@@ -101,6 +102,12 @@ export async function db() {
           favorite INTEGER NOT NULL DEFAULT 0,
           visible INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS player_progress (
+          id INTEGER PRIMARY KEY CHECK(id=1),
+          total_exp INTEGER NOT NULL DEFAULT 0 CHECK(total_exp >= 0),
+          updated_at TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO player_progress(id,total_exp,updated_at) VALUES(1,0,datetime('now'));
         INSERT OR IGNORE INTO schema_migrations(version) VALUES(2);
       `);
       await ensureCatchColumns(database);
@@ -161,6 +168,7 @@ export async function saveCatch(input: {
     input.fishId,
   );
   const isPersonalBest = input.size > (previous?.max_size ?? 0);
+  const expGained = CATCH_EXP[input.rank as keyof typeof CATCH_EXP] ?? CATCH_EXP.E;
   await database.withTransactionAsync(async () => {
     await database.runAsync(
       `INSERT INTO catches(
@@ -170,8 +178,18 @@ export async function saveCatch(input: {
       new Date().toISOString(), input.spotId, input.spotName, input.habitat,
       input.steps, isPersonalBest ? 1 : 0,
     );
+    await database.runAsync(
+      "UPDATE player_progress SET total_exp=total_exp+?,updated_at=? WHERE id=1",
+      expGained, new Date().toISOString(),
+    );
   });
-  return isPersonalBest;
+  const progression = await getPlayerProgress();
+  return { isPersonalBest, expGained, progression };
+}
+
+export async function getPlayerProgress(): Promise<PlayerProgress> {
+  const row = await (await db()).getFirstAsync<{ total_exp: number }>("SELECT total_exp FROM player_progress WHERE id=1");
+  return calculatePlayerProgress(row?.total_exp ?? 0);
 }
 
 export async function getCatchSummaries() {
