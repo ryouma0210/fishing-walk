@@ -1,14 +1,15 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
-import { AnglerArt } from "../../src/components/GameArt";
+import { AnglerArt, FishArt } from "../../src/components/GameArt";
 import { Button } from "../../src/components/ui";
 import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
 import { getCatchSummaries, getInventory, getTotalSteps } from "../../src/database/db";
 import { getSelectedArea, selectArea } from "../../src/services/areaService";
 import { colors } from "../../src/constants/theme";
 import { ChapterId } from "../../src/constants/expansionData";
+import { FISH } from "../../src/constants/game";
 
 const japanMap = require("../../assets/game/japan-prefecture-map.png");
 const worldMap = require("../../assets/game/world-chapter-map.png");
@@ -57,6 +58,19 @@ export default function JapanAreaScreen() {
   }), [caughtIds, totalSteps, story, chapterOpen]);
   const selectedState = selected ? states.find((state) => state.area.id === selected.id) : undefined;
   const currentIndex = Math.max(0, states.reduce((last, state, index) => state.unlocked ? index : last, 0));
+  const nodeTop = useCallback((index: number) => NODE_START + (states.length - 1 - index) * NODE_GAP, [states.length]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated:false }), 80);
+    return () => clearTimeout(timer);
+  }, [story]);
+
+  const chooseArea = async (state: typeof states[number]) => {
+    setSelected(state.area);
+    if (!state.unlocked) return;
+    await selectArea(state.area);
+    setCurrentAreaId(state.area.id);
+  };
 
   const enterArea = async () => {
     if (!selected || !selectedState?.unlocked) return;
@@ -73,8 +87,8 @@ export default function JapanAreaScreen() {
           {states.slice(0, -1).map((state, index) => {
             const x1 = NODE_LEFT[index % NODE_LEFT.length] / 100 * width;
             const x2 = NODE_LEFT[(index + 1) % NODE_LEFT.length] / 100 * width;
-            const y1 = NODE_START + index * NODE_GAP + 26;
-            const y2 = NODE_START + (index + 1) * NODE_GAP + 26;
+            const y1 = nodeTop(index) + 26;
+            const y2 = nodeTop(index + 1) + 26;
             const dx = x2 - x1;
             const dy = y2 - y1;
             const length = Math.sqrt(dx * dx + dy * dy);
@@ -83,13 +97,14 @@ export default function JapanAreaScreen() {
           {states.map((state, index) => {
             const left = `${NODE_LEFT[index % NODE_LEFT.length]}%` as `${number}%`;
             return (
-              <Pressable key={state.area.id} onPress={() => setSelected(state.area)} style={[styles.node, { left, top:NODE_START + index * NODE_GAP }]}>
+              <Pressable key={state.area.id} onPress={() => void chooseArea(state)} style={[styles.node, { left, top:nodeTop(index) }]}>
                 <View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.bossCaught && styles.nodeBoss, state.completed && styles.nodeComplete]}>
                   <Text style={styles.nodeMark}>{!state.unlocked ? "?" : state.completed ? "★" : state.bossCaught ? "👑" : index + 1}</Text>
                 </View>
                 <View style={[styles.nodeLabel, state.completed && styles.completeLabel]}>
                   <Text numberOfLines={1} style={styles.nodeName}>{state.unlocked ? state.area.name : "？？？"}</Text>
                   <Text style={styles.nodeStatus}>{state.unlocked ? `${state.discovered}/10` : `${state.area.requiredSteps.toLocaleString()}歩`}</Text>
+                  <View style={styles.nodeMarks}><Text style={[styles.nodeMiniMark, state.bossCaught && styles.nodeBossMark]}>♛</Text><Text style={[styles.nodeMiniMark, state.completed && styles.nodeCompleteMark]}>★</Text></View>
                 </View>
                 {state.area.id === currentAreaId && state.unlocked && <View style={styles.avatar}><AnglerArt stage={outfitStage} height={72} /></View>}
               </Pressable>
@@ -102,7 +117,7 @@ export default function JapanAreaScreen() {
         <View style={styles.chapterTabs}>
           {(["japan","world","space"] as ChapterId[]).map((id) => {
             const open = id === "japan" || id === "world" ? id === "japan" || japanClear : worldClear;
-            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setSelected(null); scrollRef.current?.scrollTo({ y:0, animated:true }); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
+            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
           })}
         </View>
         <Text style={styles.title}>{story === "japan" ? "日本全国 Fishing" : story === "world" ? "世界一周 Fishing" : "銀河宇宙 Fishing"}</Text>
@@ -121,6 +136,11 @@ export default function JapanAreaScreen() {
             ) : <>
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>発見した魚・名産物</Text><Text style={styles.summaryValue}>{selectedState.discovered}/10</Text></View>
               <View style={styles.marks}><Text style={styles.markText}>{selectedState.bossCaught ? "👑 ヌシ捕獲済み" : "ヌシ未捕獲"}</Text><Text style={[styles.markText, selectedState.completed && styles.goldText]}>{selectedState.completed ? "★ 金の完全制覇マーク" : "全10種で金マーク"}</Text></View>
+              <View style={styles.fishGrid}>{selected.fishIds.map((fishId) => {
+                const caught = caughtIds.has(fishId);
+                const fish = FISH.find((entry) => entry.id === fishId);
+                return <View key={fishId} style={styles.fishCell}><View style={styles.fishArt}>{caught ? <FishArt fishId={fishId} size={50} /> : <Text style={styles.question}>?</Text>}</View><Text numberOfLines={1} style={styles.fishName}>{caught ? fish?.name : "？？？"}</Text><Text style={styles.fishRank}>{fish?.isSpecial ? "収集物" : `${fish?.rank ?? "?"} RANK`}</Text></View>;
+              })}</View>
               <Text style={styles.products}>名産物2種：どの餌でも各0.3%</Text>
               <Button title="このエリアで釣る" onPress={enterArea} />
             </>}
@@ -137,6 +157,6 @@ const styles = StyleSheet.create({
   header:{position:"absolute",top:10,left:12,right:12,borderRadius:18,padding:12,backgroundColor:"rgba(255,255,255,.95)",elevation:12},title:{color:colors.navy,fontSize:22,fontWeight:"900"},sub:{color:colors.muted,fontSize:10,fontWeight:"700",marginTop:2},progress:{height:6,borderRadius:9,backgroundColor:colors.line,overflow:"hidden",marginTop:8},progressFill:{height:"100%",backgroundColor:colors.coral},
   chapterTabs:{flexDirection:"row",gap:5,marginBottom:7},chapterTab:{flex:1,paddingVertical:6,borderRadius:10,alignItems:"center",backgroundColor:colors.foam},activeChapterTab:{backgroundColor:colors.ocean},lockedChapterTab:{opacity:.55},chapterTabText:{color:colors.navy,fontSize:10,fontWeight:"900"},activeChapterTabText:{color:colors.white},
   route:{position:"absolute",height:6,borderRadius:5,backgroundColor:"rgba(255,255,255,.45)",zIndex:1},routeUnlocked:{backgroundColor:"#FFD55A"},
-  node:{position:"absolute",width:112,marginLeft:-56,alignItems:"center",zIndex:3},nodeCircle:{width:48,height:48,borderRadius:24,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(17,50,65,.88)",borderWidth:3,borderColor:"#A6B8BE"},nodeUnlocked:{backgroundColor:"#FFFFFF",borderColor:colors.aqua},nodeBoss:{backgroundColor:"#FFF3C3",borderColor:"#F2B93B"},nodeComplete:{backgroundColor:"#FFE066",borderColor:"#C88B00"},nodeMark:{color:colors.navy,fontSize:18,fontWeight:"900"},nodeLabel:{marginTop:-3,minWidth:88,borderRadius:9,paddingHorizontal:6,paddingVertical:3,backgroundColor:"rgba(4,48,63,.84)"},completeLabel:{backgroundColor:"rgba(132,87,0,.9)"},nodeName:{color:colors.white,fontSize:10,fontWeight:"900",textAlign:"center"},nodeStatus:{color:"#D8F5F2",fontSize:8,fontWeight:"800",textAlign:"center"},avatar:{position:"absolute",left:-45,bottom:-9,width:48,height:72,overflow:"hidden"},
-  backdrop:{flex:1,justifyContent:"center",padding:18,backgroundColor:"rgba(1,20,29,.78)"},sheet:{borderRadius:24,padding:18,gap:11,backgroundColor:colors.white},sheetEyebrow:{color:colors.ocean,fontSize:10,fontWeight:"900",letterSpacing:1},sheetName:{color:colors.navy,fontSize:28,fontWeight:"900"},lockBox:{borderRadius:14,padding:13,backgroundColor:"#EDF2F2"},lockTitle:{color:colors.navy,fontWeight:"900"},lockText:{color:colors.muted,fontSize:11,marginTop:4},summaryRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",padding:12,borderRadius:14,backgroundColor:colors.foam},summaryLabel:{color:colors.ink,fontWeight:"800"},summaryValue:{color:colors.navy,fontSize:23,fontWeight:"900"},marks:{gap:6},markText:{color:colors.muted,fontSize:12,fontWeight:"900"},goldText:{color:"#BA7A00",fontSize:14},products:{color:colors.coral,fontSize:11,fontWeight:"900"},
+  node:{position:"absolute",width:112,marginLeft:-56,alignItems:"center",zIndex:3},nodeCircle:{width:48,height:48,borderRadius:24,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(17,50,65,.88)",borderWidth:3,borderColor:"#A6B8BE"},nodeUnlocked:{backgroundColor:"#FFFFFF",borderColor:colors.aqua},nodeBoss:{backgroundColor:"#FFF3C3",borderColor:"#F2B93B"},nodeComplete:{backgroundColor:"#FFE066",borderColor:"#C88B00"},nodeMark:{color:colors.navy,fontSize:18,fontWeight:"900"},nodeLabel:{marginTop:-3,minWidth:88,borderRadius:9,paddingHorizontal:6,paddingVertical:3,backgroundColor:"rgba(4,48,63,.84)"},completeLabel:{backgroundColor:"rgba(132,87,0,.9)"},nodeName:{color:colors.white,fontSize:10,fontWeight:"900",textAlign:"center"},nodeStatus:{color:"#D8F5F2",fontSize:8,fontWeight:"800",textAlign:"center"},nodeMarks:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:1},nodeMiniMark:{color:"#718A91",fontSize:9,fontWeight:"900"},nodeBossMark:{color:"#FFD04E"},nodeCompleteMark:{color:"#FFE866"},avatar:{position:"absolute",left:-45,bottom:-9,width:48,height:72,overflow:"hidden"},
+  backdrop:{flex:1,justifyContent:"center",padding:13,backgroundColor:"rgba(1,20,29,.78)"},sheet:{maxHeight:"94%",borderRadius:24,padding:15,gap:9,backgroundColor:colors.white},sheetEyebrow:{color:colors.ocean,fontSize:10,fontWeight:"900",letterSpacing:1},sheetName:{color:colors.navy,fontSize:25,fontWeight:"900"},lockBox:{borderRadius:14,padding:13,backgroundColor:"#EDF2F2"},lockTitle:{color:colors.navy,fontWeight:"900"},lockText:{color:colors.muted,fontSize:11,marginTop:4},summaryRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",padding:10,borderRadius:14,backgroundColor:colors.foam},summaryLabel:{color:colors.ink,fontWeight:"800"},summaryValue:{color:colors.navy,fontSize:21,fontWeight:"900"},marks:{flexDirection:"row",justifyContent:"space-between",gap:6},markText:{color:colors.muted,fontSize:10,fontWeight:"900"},goldText:{color:"#BA7A00",fontSize:11},products:{color:colors.coral,fontSize:10,fontWeight:"900"},fishGrid:{flexDirection:"row",flexWrap:"wrap",gap:5},fishCell:{width:"18.8%",alignItems:"center",padding:3,borderRadius:9,backgroundColor:colors.foam},fishArt:{width:50,height:50,alignItems:"center",justifyContent:"center"},question:{color:colors.navy,fontSize:31,fontWeight:"900",opacity:.7},fishName:{maxWidth:"100%",color:colors.ink,fontSize:7,fontWeight:"900"},fishRank:{color:colors.muted,fontSize:6,fontWeight:"800"},
 });
