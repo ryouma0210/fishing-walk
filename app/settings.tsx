@@ -161,7 +161,7 @@ export default function SettingsScreen() {
 
         <Card>
           <Text style={ui.h2}>データ管理</Text>
-          <Text style={ui.body}>釣果、歩数、装備、ポイント、水族館設定を端末内のバックアップファイルへ保存・復元します。</Text>
+          <Text style={ui.body}>釣果、全国図鑑、歩数、装備、ポイントを端末内のバックアップファイルへ保存・復元します。</Text>
           <Button title={busy ? "処理中…" : "データを書き出す"} disabled={busy} onPress={exportData} />
           <Button title="バックアップから復元" disabled={busy} kind="secondary" onPress={selectRestore} />
         </Card>
