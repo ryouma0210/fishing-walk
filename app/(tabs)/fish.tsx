@@ -37,6 +37,7 @@ type CatchResult = {
 type BattleConfig = { zone: number; seconds: number; pull: number };
 const bossCutin = require("../../assets/game/boss-cutin.png");
 const firstPersonRod = require("../../assets/game/first-person-rod.png");
+const fishShadowImage = require("../../assets/game/fish-shadow.png");
 
 function startLoopMusic(player: AudioPlayer, volume: number) {
   player.loop = true;
@@ -130,10 +131,9 @@ function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, 
   useEffect(() => {
     if (!active) { jump.setValue(0); ripple.setValue(0); return; }
     const jumpLoop = Animated.loop(Animated.sequence([
-      Animated.delay(boss ? 900 : 1700),
-      Animated.timing(jump, { toValue: 1, duration: boss ? 330 : 430, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(jump, { toValue: 0, duration: boss ? 390 : 510, easing: Easing.in(Easing.quad), useNativeDriver: true }),
-      Animated.delay(boss ? 650 : 1300),
+      Animated.timing(jump, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(jump, { toValue: 0, duration: 1100, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.delay(boss ? 10000 : 5000),
     ]));
     const rippleLoop = Animated.loop(Animated.sequence([
       Animated.timing(ripple, { toValue: 1, duration: 1450, easing: Easing.out(Easing.quad), useNativeDriver: true }),
@@ -622,10 +622,7 @@ export default function FishScreen() {
           {(phase === "casting" || phase === "approach" || phase === "bite") && <View style={styles.approachMessageBubble}><Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入…" : phase === "bite" ? "魚が食いついた！" : approachProgress < 55 ? "魚影が近づいている…" : "ウキのすぐ近く！"}</Text></View>}
           {(phase === "approach" || phase === "bite" || phase === "battle") && (
             <View style={[styles.shadow, phase === "battle" && styles.battleShadow, { left:`${Math.max(8, Math.min(82, fishX))}%`, transform: [{ scale: phase === "battle" ? (isBossBattle ? 1.65 : 1.18) : 0.45 + shadowScale * 0.7 }, { scaleX:fishDirection }] }]}>
-              <View style={styles.shadowSnout} />
-              <View style={styles.shadowEye} />
-              <View style={styles.shadowDorsal} />
-              <View style={styles.shadowTail} />
+              <Image source={fishShadowImage} resizeMode="contain" style={styles.shadowImage} />
             </View>
           )}
           {(phase === "casting" || phase === "approach" || phase === "bite") && (
@@ -817,12 +814,9 @@ const styles = StyleSheet.create({
   approachHook: { position: "absolute", right: 2, top: 0, zIndex: 4 },
   approachHookIcon: { fontSize: 18 },
   approachMessage: { color: colors.muted, fontSize: 10, fontWeight: "800", textAlign: "center", marginTop: 5 },
-  shadow: { width: 82, height: 30, borderRadius: 50, backgroundColor: "rgba(1,24,35,.76)", position: "absolute", top: "52%" },
-  battleShadow: { top:"43%", width:96, height:34, backgroundColor:"rgba(1,27,42,.82)", borderWidth:2, borderColor:"rgba(141,225,231,.35)" },
-  shadowSnout: { position:"absolute", right:-8, top:8, width:0, height:0, borderTopWidth:7, borderBottomWidth:7, borderLeftWidth:12, borderTopColor:"transparent", borderBottomColor:"transparent", borderLeftColor:"rgba(1,24,35,.82)" },
-  shadowEye: { position:"absolute", right:13, top:8, width:5, height:5, borderRadius:3, backgroundColor:"rgba(173,232,239,.9)", zIndex:2 },
-  shadowDorsal: { position:"absolute", right:28, top:-10, width:0, height:0, borderLeftWidth:12, borderRightWidth:5, borderBottomWidth:14, borderLeftColor:"transparent", borderRightColor:"transparent", borderBottomColor:"rgba(1,24,35,.8)", transform:[{rotate:"10deg"}] },
-  shadowTail: { position:"absolute", left:-18, top:2, width:0, height:0, borderTopWidth:13, borderBottomWidth:13, borderRightWidth:22, borderTopColor:"transparent", borderBottomColor:"transparent", borderRightColor:"rgba(1,24,35,.8)" },
+  shadow: { width:118, height:70, position:"absolute", top:"49%", marginLeft:-59, opacity:.82 },
+  battleShadow: { top:"39%", width:145, height:86, marginLeft:-72, opacity:.9 },
+  shadowImage: { width:"100%", height:"100%" },
   float: { width: 15, height: 42, borderRadius: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.ink, position: "absolute", top: "35%" },
   floatRed: { height: 14, backgroundColor: colors.coral, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   floatDown: { top: "54%", height: 18 },
