@@ -218,7 +218,7 @@ export function FishArt({ fishId, size = 72, locked = false }: {
   const fish = FISH[globalIndex] ?? FISH[0];
   if (fish.prefectureSlug) {
     if (fish.rank === "SSS" && prefectureBosses[fish.prefectureSlug]) {
-      return <View style={[{ width:size, height:size, alignItems:"center", justifyContent:"center", overflow:"hidden" }, locked && styles.locked]}><Image source={prefectureBosses[fish.prefectureSlug]} resizeMode="contain" style={{ width:size*.9, height:size*.9 }} /></View>;
+      return <View style={[{ width:size, height:size, alignItems:"center", justifyContent:"center" }, locked && styles.locked]}><Image source={prefectureBosses[fish.prefectureSlug]} resizeMode="contain" style={{ width:size*.78, height:size*.78 }} /></View>;
     }
     const prefectureFish = FISH.filter((entry) => entry.prefectureSlug === fish.prefectureSlug);
     const prefectureIndex = Math.max(0, prefectureFish.findIndex((entry) => entry.id === fishId));
@@ -248,12 +248,12 @@ export function FishArt({ fishId, size = 72, locked = false }: {
 export function GearArt({ itemId, size = 64 }: { itemId: string; size?: number }) {
   const globalIndex = gearIndexes[itemId] ?? 0;
   return (
-    <View style={styles.rounded}>
+    <View style={[styles.gearFrame, { width:size, height:size }]}>
       <GridSprite
         source={globalIndex < 16 ? apparelGearSheet : tackleGearSheet}
         index={globalIndex % 16}
         columns={4}
-        size={size}
+        size={size * .88}
       />
     </View>
   );
@@ -307,7 +307,7 @@ export function AnglerArt({ stage = 0, height = 155 }: { stage?: number; height?
 }
 
 const styles = StyleSheet.create({
-  rounded: { borderRadius: 14, overflow: "hidden" },
+  gearFrame: { alignItems:"center", justifyContent:"center", overflow:"visible" },
   locked: { opacity: 0.22 },
   crop: { width: "100%", borderRadius: 16, overflow: "hidden", backgroundColor: "#DDF6F6" },
   angler: { overflow: "hidden", borderRadius: 15, backgroundColor: "#DDF6F6" },

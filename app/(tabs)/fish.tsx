@@ -11,7 +11,7 @@ import { FISHING_AREAS, FishingArea } from "../../src/constants/areas";
 import { colors, rankColors } from "../../src/constants/theme";
 import {
   consumeSelectedBait, getBaitInventory, getEquippedItems, getSelectedBait, getTodayCatchCount,
-  getPlayerProgress, saveCatch, selectBait,
+  getCatchSummaries, getPlayerProgress, saveCatch, selectBait,
 } from "../../src/database/db";
 import { getSelectedArea } from "../../src/services/areaService";
 import { syncTodaySteps } from "../../src/services/stepService";
@@ -105,9 +105,38 @@ function WeatherEffects({ speed }: { speed: number }) {
   );
 }
 
-function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, reeling, danger, boss }: {
+function ReelWindingIndicator({ active, direction }: { active: boolean; direction: -1 | 0 | 1 }) {
+  const [turn] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (!active) { turn.setValue(0); return; }
+    const loop = Animated.loop(Animated.timing(turn, { toValue:1, duration:360, easing:Easing.linear, useNativeDriver:true }));
+    loop.start();
+    return () => loop.stop();
+  }, [active, turn]);
+  if (!active) return null;
+  const handleRotation = turn.interpolate({ inputRange:[0,1], outputRange:direction < 0 ? ["0deg","-360deg"] : ["0deg","360deg"] });
+  const spoolRotation = turn.interpolate({ inputRange:[0,1], outputRange:direction < 0 ? ["0deg","720deg"] : ["0deg","-720deg"] });
+  return <View style={styles.windingIndicator}>
+    <Text style={styles.windingLabel}>{direction < 0 ? "左巻き中" : "右巻き中"}</Text>
+    <View style={styles.windingReelBody}>
+      <Animated.View style={[styles.windingSpool, { transform:[{ rotate:spoolRotation }] }]}>
+        <View style={styles.windingSpoolLine} />
+        <View style={[styles.windingSpoolLine, { transform:[{ rotate:"90deg" }] }]} />
+        <View style={styles.windingHub} />
+      </Animated.View>
+      <Animated.View style={[styles.windingHandle, { transform:[{ rotate:handleRotation }] }]}>
+        <View style={styles.windingHandleArm} />
+        <View style={styles.windingHandleKnob} />
+      </Animated.View>
+    </View>
+    <Text style={styles.windingMotion}>↻ 糸を巻き取っています</Text>
+  </View>;
+}
+
+function FirstPersonFishingLayer({ active, fishId, discovered, fishDirection, rodDirection, reeling, danger, boss }: {
   active: boolean;
   fishId?: string;
+  discovered: boolean;
   fishDirection: -1 | 1;
   rodDirection: -1 | 0 | 1;
   reeling: boolean;
@@ -168,7 +197,9 @@ function FirstPersonFishingLayer({ active, fishId, fishDirection, rodDirection, 
       <Animated.View style={[styles.waterRipple, { opacity: rippleOpacity, transform: [{ scaleX: rippleScale }, { scaleY: rippleScale }] }]} />
       {fishId && (
         <Animated.View style={[styles.jumpingFish, { left: fishDirection < 0 ? "17%" : "58%", opacity: fishOpacity, transform: [{ translateY: jumpY }, { rotate: jumpRotate }, { scaleX: fishDirection }] }]}>
-          <FishArt fishId={fishId} size={boss ? 118 : 82} />
+          {discovered
+            ? <FishArt fishId={fishId} size={boss ? 118 : 82} />
+            : <Image source={fishShadowImage} resizeMode="contain" style={[styles.jumpingShadow, boss && styles.jumpingBossShadow]} />}
           <View style={styles.fishSplash}><Text style={styles.fishSplashText}>💦</Text></View>
         </Animated.View>
       )}
@@ -219,6 +250,7 @@ export default function FishScreen() {
   const [isReeling, setIsReeling] = useState(false);
   const [rodDirection, setRodDirection] = useState<-1 | 0 | 1>(0);
   const [fishX, setFishX] = useState(50);
+  const [caughtIds, setCaughtIds] = useState<Set<string>>(new Set());
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => calculatePlayerProgress(0));
   const reelSound = useAudioPlayer(require("../../assets/audio/reel.wav"));
   const tensionSound = useAudioPlayer(require("../../assets/audio/tension.wav"));
@@ -273,7 +305,7 @@ export default function FishScreen() {
   };
 
   const load = useCallback(async () => {
-    const [equipped, selectedArea, todaySteps, selectedBait, catches, savedSettings, baits, progression] = await Promise.all([
+    const [equipped, selectedArea, todaySteps, selectedBait, catches, savedSettings, baits, progression, catchSummaries] = await Promise.all([
       getEquippedItems(),
       getSelectedArea(),
       syncTodaySteps(),
@@ -282,6 +314,7 @@ export default function FishScreen() {
       getSettings(),
       getBaitInventory(),
       getPlayerProgress(),
+      getCatchSummaries(),
     ]);
     setGear(equipped);
     setSpot(selectedArea);
@@ -291,6 +324,7 @@ export default function FishScreen() {
     setSettings(savedSettings);
     setBaitStock(Object.fromEntries(baits.map((item) => [item.item_id, item.quantity])));
     setPlayerProgress(progression);
+    setCaughtIds(new Set(catchSummaries.map((row) => row.fish_id)));
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -438,6 +472,7 @@ export default function FishScreen() {
       steps,
     });
     setPlayerProgress(catchSave.progression);
+    setCaughtIds((current) => new Set(current).add(candidate.id));
     setLast({ ...candidate, size, isPersonalBest:catchSave.isPersonalBest, bigCatch: sizeRatio >= 0.86 || RANK_INDEX[candidate.rank] >= 6, closeCall, isBoss, unlockedAreaName, expGained:catchSave.expGained, playerLevel:catchSave.progression.level, levelUp:catchSave.progression.level > previousLevel });
     setTodayCatch((value) => value + 1);
     setPhase("result");
@@ -591,6 +626,7 @@ export default function FishScreen() {
         <FirstPersonFishingLayer
           active={["casting", "approach", "bite", "battle"].includes(phase)}
           fishId={phase === "battle" ? candidate?.id : undefined}
+          discovered={Boolean(candidate && caughtIds.has(candidate.id))}
           fishDirection={fishDirection}
           rodDirection={rodDirection}
           reeling={phase === "battle" && isReeling}
@@ -686,6 +722,7 @@ export default function FishScreen() {
                   </Pressable>
                 ))}
               </View>
+              <ReelWindingIndicator active={isReeling} direction={rodDirection} />
               <Text style={styles.reelSubText}>魚影と同じ方向なら距離が縮み、逆方向や放置では魚が離れます</Text>
             </>}
           </View>
@@ -771,6 +808,8 @@ const styles = StyleSheet.create({
   waterGlint: { position: "absolute", left: -40, right: -40, top: "38%", height: 86, borderTopWidth: 2, borderBottomWidth: 1, borderColor: "rgba(218,252,255,.42)", backgroundColor: "rgba(0,140,164,.10)", transform: [{ rotate: "-2deg" }] },
   waterRipple: { position: "absolute", top: "44%", left: "50%", width: 90, height: 26, marginLeft: -45, borderRadius: 50, borderWidth: 3, borderColor: "rgba(220,255,255,.8)", backgroundColor: "rgba(46,195,211,.12)" },
   jumpingFish: { position: "absolute", top: "42%", zIndex: 4, alignItems: "center", justifyContent: "center" },
+  jumpingShadow: { width:112, height:70, opacity:.9 },
+  jumpingBossShadow: { width:154, height:96 },
   fishSplash: { position: "absolute", bottom: -22, alignItems: "center" },
   fishSplashText: { fontSize: 42 },
   rodRig: { position: "absolute", left: "4%", right: "4%", top: "6%", bottom: -95, zIndex: 5, transformOrigin: "bottom center" },
@@ -879,6 +918,16 @@ const styles = StyleSheet.create({
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelArrow: { color: "#FFD963", fontSize: 22, lineHeight: 23, fontWeight: "900" },
   reelText: { color: colors.white, fontWeight: "900", fontSize: 11, textAlign:"center" },
+  windingIndicator: { minHeight:82, borderRadius:15, paddingHorizontal:12, paddingVertical:7, flexDirection:"row", alignItems:"center", justifyContent:"center", gap:12, backgroundColor:"#E3F8F6", borderWidth:2, borderColor:colors.aqua },
+  windingLabel: { width:55, color:colors.ocean, fontSize:11, fontWeight:"900", textAlign:"center" },
+  windingReelBody: { width:66, height:66, borderRadius:33, alignItems:"center", justifyContent:"center", backgroundColor:"#073947", borderWidth:4, borderColor:"#F2B93B", shadowColor:"#002832", shadowOpacity:.5, shadowRadius:5, elevation:5 },
+  windingSpool: { width:45, height:45, borderRadius:23, alignItems:"center", justifyContent:"center", overflow:"hidden", backgroundColor:"#087B89", borderWidth:4, borderColor:"#7CE1E4" },
+  windingSpoolLine: { position:"absolute", width:40, height:3, borderRadius:2, backgroundColor:"rgba(235,255,255,.9)" },
+  windingHub: { width:13, height:13, borderRadius:7, backgroundColor:"#FFD963", borderWidth:2, borderColor:"#FFF4B8", zIndex:2 },
+  windingHandle: { position:"absolute", width:70, height:70, alignItems:"center" },
+  windingHandleArm: { width:5, height:28, borderRadius:3, backgroundColor:"#F2B93B", marginTop:3 },
+  windingHandleKnob: { position:"absolute", top:-4, width:16, height:16, borderRadius:8, backgroundColor:colors.navy, borderWidth:3, borderColor:"#FFD963" },
+  windingMotion: { flex:1, color:colors.navy, fontSize:10, fontWeight:"900", textAlign:"center" },
   reelSubText: { color: colors.muted, fontWeight: "700", fontSize: 9, textAlign: "center" },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
   areaClear: { alignSelf: "stretch", borderRadius: 16, padding: 11, alignItems: "center", backgroundColor: "#122F48", borderWidth: 2, borderColor: "#F0B83F" },
