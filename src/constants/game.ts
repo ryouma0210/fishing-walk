@@ -251,23 +251,103 @@ const LEGACY_FISH: Fish[] = [
   creature("sea_abyss_boss","深淵皇アビサル","SSS",1200,3000,"sea","極夜深海ヌシ館","海溝の最深部に君臨する深淵皇。","👑"),
 ];
 
-const PREFECTURE_RANK_NAMES: Record<Rank, string> = {
-  E: "小魚", D: "川魚", C: "銀鱗魚", B: "力魚", A: "大物", S: "幻魚", SS: "伝説魚", SSS: "ヌシ",
+const NATURAL_SPECIES: Record<Habitat, string[][]> = {
+  pond: [
+    ["メダカ", "モツゴ", "タナゴ", "カダヤシ"],
+    ["ギンブナ", "シマドジョウ", "ヌマエビ", "アカハライモリ"],
+    ["マゴイ", "ニホンナマズ", "カムルチー", "オオウナギ"],
+    ["巨大スッポン", "ハクレン", "ソウギョ", "ビワコオオナマズ"],
+    ["アリゲーターガー", "ピラルク", "イトウ", "百年大鯉"],
+    ["朱鱗の幻鯉", "月影ナマズ", "白銀ライギョ", "蓮華の精霊魚"],
+    ["水晶龍魚", "千年亀", "翡翠の大鯉", "神池のミズチ"],
+    ["水帝リヴァル", "沼王バルガス", "蒼池神セイラン", "蓮獄主ロータス"],
+  ],
+  river: [
+    ["カワハゼ", "ウグイ", "オイカワ", "アブラハヤ"],
+    ["アユ", "ヤマメ", "カジカ", "テナガエビ"],
+    ["アマゴ", "イワナ", "ニジマス", "サツキマス"],
+    ["サクラマス", "ブラウントラウト", "ニゴイ", "オオウナギ"],
+    ["キングサーモン", "イトウ", "ヨーロッパオオナマズ", "アリゲーターガー"],
+    ["雷光アユ", "白銀サーモン", "紅蓮イワナ", "幻影トラウト"],
+    ["天瀑龍魚", "氷河イトウ", "金剛ナマズ", "水晶サーモン"],
+    ["河神リュウガ", "瀑王ライデン", "清流神アクエル", "激流帝ヴォルガ"],
+  ],
+  lake: [
+    ["ワカサギ", "タモロコ", "ヒガイ", "レイクシスコ"],
+    ["ニジマス", "ブルーギル", "ローチ", "スジエビ"],
+    ["ブラックバス", "レイクトラウト", "カムルチー", "フレッシュウォータードラム"],
+    ["ノーザンパイク", "ヘラチョウザメ", "レイクスタージョン", "ビワマス"],
+    ["ピラルク", "アリゲーターガー", "オオチョウザメ", "巨大パイク"],
+    ["黄金レイクトラウト", "月輪マス", "幻影パーチ", "オーロラトラウト"],
+    ["星影チョウザメ", "蒼湖の大蛇", "水晶パイク", "鏡湖の龍魚"],
+    ["湖帝ネッシア", "天輪王クレーター", "鏡湖神ミラージュ", "深湖主リムネス"],
+  ],
+  sea: [
+    ["カタクチイワシ", "マアジ", "マサバ", "キビナゴ"],
+    ["マダイ", "マダコ", "アオリイカ", "イサキ"],
+    ["キジハタ", "カツオ", "ブリ", "シイラ"],
+    ["クロマグロ", "カンパチ", "メカジキ", "タマカイ"],
+    ["シーラカンス", "リュウグウノツカイ", "マンボウ", "バショウカジキ"],
+    ["ダイオウイカ", "オニイトマキエイ", "白銀マグロ", "虹鱗シイラ"],
+    ["ジンベエザメ", "深海龍魚", "黄金クラーケン", "蒼海リヴァイア"],
+    ["海王ネレウス", "深淵皇アビサル", "潮神トリトン", "大海主ケートス"],
+  ],
 };
 
+const SPACE_SPECIES: string[][] = [
+  ["星屑メダカ", "月光ハゼ", "彗星イワシ", "真空エビ"],
+  ["隕石ダコ", "惑星タイ", "光子イカ", "衛星クラゲ"],
+  ["プラズマアジ", "流星サバ", "磁気ウナギ", "星雲キジハタ"],
+  ["重力マグロ", "火星カジキ", "土星ブリ", "暗黒タマカイ"],
+  ["銀河シーラカンス", "恒星マンタ", "超新星マンボウ", "宇宙リュウグウ"],
+  ["オーロラクラーケン", "パルサーシャーク", "星虹リヴァイア", "次元マンタ"],
+  ["銀河龍アストラル", "時空鯨クロノス", "星海蛇ネビュラ", "重力獣グラビオン"],
+  ["宇宙海帝コスモス", "虚空王ヴォイド", "創星神ジェネシス", "銀河主アンドロス"],
+];
+
+const PREFECTURE_SPECIES: Partial<Record<string, Partial<Record<Rank, { name: string; description: string }>>>> = {
+  nagasaki: {
+    E: { name: "長崎県のカタクチイワシ", description: "長崎沿岸を大きな群れで泳ぐ銀色の小魚。" },
+    D: { name: "長崎県のマダイ", description: "五島灘の岩礁域に棲む、鮮やかな桜色のタイ。" },
+    C: { name: "長崎県のキジハタ", description: "長崎の岩礁や漁礁に潜む、褐色模様の高級根魚。" },
+    B: { name: "長崎県のクロマグロ", description: "対馬海流に乗って長崎近海を回遊する力強いマグロ。" },
+    A: { name: "長崎県のブリ", description: "五島列島周辺の豊かな海で育った大型の回遊魚。" },
+    S: { name: "五島灘の幻光アジ", description: "五島灘の夜に青白い光をまとって現れる幻のアジ。" },
+    SS: { name: "対馬海流の黄金龍魚", description: "対馬海流を支配すると伝えられる黄金の龍魚。" },
+    SSS: { name: "長崎海王アラゴン", description: "長崎の島々と海峡を守る、伝説の巨大ヌシ。" },
+  },
+};
+
+function areaSpecies(prefecture: (typeof ALL_AREA_SEEDS)[number], areaIndex: number, rank: Rank, rankIndex: number) {
+  const override = PREFECTURE_SPECIES[prefecture.slug]?.[rank];
+  if (override) return override;
+  const candidates = prefecture.chapter === "space" ? SPACE_SPECIES[rankIndex] : NATURAL_SPECIES[prefecture.habitat][rankIndex];
+  const speciesName = candidates[(areaIndex * 3 + rankIndex) % candidates.length];
+  const habitatName = HABITAT_NAMES[prefecture.habitat];
+  return {
+    name: `${prefecture.name}の${speciesName}`,
+    description: rankIndex < 5
+      ? `${prefecture.name}の${habitatName}に生息する${speciesName}。地域の水環境に適応した個体。`
+      : `${prefecture.name}の${habitatName}に現れる${speciesName}。希少な力を宿した特別な存在。`,
+  };
+}
+
 export const PREFECTURE_FISH: Fish[] = ALL_AREA_SEEDS.flatMap((prefecture, prefectureIndex) => {
-  const rankFish = RANKS.map((rank, rankIndex): Fish => ({
-    id: `jp_${prefecture.slug}_${rank.toLowerCase()}`,
-    name: rank === "SSS" ? `${prefecture.name}のヌシ` : `${prefecture.name}の${PREFECTURE_RANK_NAMES[rank]}`,
-    emoji: rank === "SSS" ? "👑" : "🐟",
-    rank,
-    minCm: 5 + rankIndex * 18,
-    maxCm: 18 + rankIndex * 75,
-    habitats: [prefecture.habitat],
-    aquarium: `${prefecture.name}図鑑`,
-    description: `${prefecture.name}の水辺で出会える${rank}ランクの生き物。`,
-    prefectureSlug: prefecture.slug,
-  }));
+  const rankFish = RANKS.map((rank, rankIndex): Fish => {
+    const species = areaSpecies(prefecture, prefectureIndex, rank, rankIndex);
+    return {
+      id: `jp_${prefecture.slug}_${rank.toLowerCase()}`,
+      name: species.name,
+      emoji: rank === "SSS" ? "👑" : "🐟",
+      rank,
+      minCm: 5 + rankIndex * 18,
+      maxCm: 18 + rankIndex * 75,
+      habitats: [prefecture.habitat],
+      aquarium: `${prefecture.name}図鑑`,
+      description: species.description,
+      prefectureSlug: prefecture.slug,
+    };
+  });
   const products = prefecture.products.map((name, productIndex): Fish => ({
     id: `jp_${prefecture.slug}_special_${productIndex + 1}`,
     name,

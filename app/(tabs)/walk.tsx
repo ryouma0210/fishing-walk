@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { AnglerArt, GearArt } from "../../src/components/GameArt";
 import { FISHING_AREAS } from "../../src/constants/areas";
 import { GearKind, SHOP } from "../../src/constants/game";
-import { CatchSummary, equipItem, equipOutfitSet, getCatchStats, getCatchSummaries, getInventory, getPlayerProgress, getWalkPoints, InventoryRow, unequipKind, unequipOutfit } from "../../src/database/db";
+import { CatchSummary, equipItem, equipOutfitSet, getCatchStats, getCatchSummaries, getInventory, getPlayerProgress, getTotalSteps, getWalkPoints, InventoryRow, unequipKind, unequipOutfit } from "../../src/database/db";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { colors } from "../../src/constants/theme";
 import { getDailyMissions } from "../../src/services/dailyService";
@@ -16,17 +16,20 @@ export default function MyPage() {
   const [stats, setStats] = useState({ count: 0, unique_count: 0, largest: 0 });
   const [rows, setRows] = useState<CatchSummary[]>([]);
   const [steps, setSteps] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(0);
   const [points, setPoints] = useState(0);
   const [daily, setDaily] = useState({ completed: 0, total: 3, claimable: 0 });
   const [outfitStage, setOutfitStage] = useState(0);
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => calculatePlayerProgress(0));
+  const [equipmentModal, setEquipmentModal] = useState<"outfit" | GearKind | null>(null);
 
   useFocusEffect(useCallback(() => {
-    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getWalkPoints(), getInventory(), getPlayerProgress()]).then(async ([catchStats, catches, today, wallet, inventory, progression]) => {
+    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getTotalSteps(), getWalkPoints(), getInventory(), getPlayerProgress()]).then(async ([catchStats, catches, today, allSteps, wallet, inventory, progression]) => {
       setStats(catchStats);
       setRows(catches);
       setSteps(today.steps);
+      setTotalSteps(allSteps);
       setPoints(wallet);
       setInventory(inventory);
       setPlayerProgress(progression);
@@ -43,6 +46,8 @@ export default function MyPage() {
     { name: "全国図鑑マスター", unlocked: rows.length === FISHING_AREAS.flatMap((area) => area.fishIds).length },
   ];
   const unlockedTitles = titles.filter((title) => title.unlocked).length;
+  const currentTitle = titles.filter((title) => title.unlocked).at(-1)?.name ?? "未獲得";
+  const todayEarnedPoints = Math.floor(steps / 100);
   const equipmentKinds: { kind: GearKind; label: string; icon: string }[] = [
     { kind: "rod", label: "ロッド", icon: "🎣" },
     { kind: "reel", label: "リール", icon: "⚙️" },
@@ -53,57 +58,57 @@ export default function MyPage() {
     setInventory(next);
     setOutfitStage([1, 2, 3, 4].find((level) => ["hat", "top", "bottom", "shoes"].every((kind) => next.some((row) => row.item_id === `${kind}${level}` && row.equipped === 1))) ?? 0);
   };
+  const outfitNames = ["普段着", "ライトアングラー", "ウォータープルーフ", "ストームフィッシャー", "海王スタイル"];
+  const currentGear = (kind: GearKind) => {
+    const id = inventory.find((row) => row.equipped === 1 && SHOP.some((item) => item.id === row.item_id && item.kind === kind))?.item_id;
+    return SHOP.find((item) => item.id === id);
+  };
 
   return (
     <Screen>
       <Header title="My Page" sub="歩数・釣果・称号・設定" />
+      <Card style={styles.statusCard}>
+        <Text style={styles.statusHeading}>PLAYER STATUS</Text>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>総巻き取り(%)：</Text><Text style={styles.statusValue}>+{(playerProgress.reelBonusRate * 100).toFixed(1)}%</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>称号：</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusValue, styles.statusTitle]}>{currentTitle}</Text></View>
+        <View style={styles.statusBlank} />
+        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日の歩数：</Text><Text style={styles.todayStatusValue}>{steps.toLocaleString()}歩</Text></View>
+        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日獲得pt：</Text><Text style={styles.todayStatusValue}>{todayEarnedPoints.toLocaleString()}pt</Text></View>
+        <View style={styles.expBlock}>
+          <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
+          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
+        </View>
+      </Card>
+
       <Card style={styles.profile}>
         <View style={styles.profileHeader}>
           <View style={styles.avatar}><Text style={styles.avatarText}>🎣</Text></View>
           <View style={styles.profileInfo}>
             <Text style={styles.playerName}>Fishing Walker</Text>
-            <Text style={styles.playerLevel}>LEVEL {playerProgress.level}</Text>
-            <Text style={ui.muted}>今日 {steps.toLocaleString()}歩 · {points.toLocaleString()}pt</Text>
-            <Text style={styles.titleText}>称号 {unlockedTitles}/{titles.length}</Text>
+            <Text style={ui.muted}>現在の衣装と装備</Text>
+            <Text style={styles.titleText}>獲得称号 {unlockedTitles}/{titles.length}</Text>
           </View>
         </View>
-        <View style={styles.expBlock}>
-          <View style={ui.between}><Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text><Text style={styles.reelBonus}>巻き取り +{(playerProgress.reelBonusRate*100).toFixed(1)}%</Text></View>
-          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
+        <View style={styles.equipmentBoard}>
+          <View style={styles.slotColumn}>
+            {[{kind:"outfit" as const,label:"一式"},{kind:"rod" as const,label:"ロッド"},{kind:"reel" as const,label:"リール"},{kind:"cooler" as const,label:"クーラー"}].map(({kind,label}) => {
+              const gear = kind === "outfit" ? null : currentGear(kind);
+              return <Pressable key={kind} onPress={() => setEquipmentModal(kind)} style={styles.slotButton}>
+                {kind === "outfit" ? <AnglerArt stage={outfitStage} height={52} /> : gear ? <GearArt itemId={gear.id} size={43} /> : <Text style={styles.slotIcon}>{kind === "rod" ? "🎣" : kind === "reel" ? "⚙️" : "🧊"}</Text>}
+                <Text style={styles.slotLabel}>{label}</Text>
+              </Pressable>;
+            })}
+          </View>
+          <View style={styles.outfitStage}>
+            <Text style={styles.outfitStageTitle}>現在の衣装</Text>
+            <AnglerArt stage={outfitStage} height={245} />
+            <Text style={styles.outfitStageName}>{outfitNames[outfitStage]}</Text>
+            <Text style={styles.outfitStageHint}>左の装備をタップして変更</Text>
+          </View>
         </View>
-        <View style={styles.currentOutfit}><AnglerArt stage={outfitStage} height={170} /><View style={styles.outfitCopy}><Text style={styles.outfitLabel}>現在の衣装</Text><Text style={styles.outfitName}>{["普段着","ライトアングラー","ウォータープルーフ","ストームフィッシャー","海王スタイル"][outfitStage]}</Text><Text style={ui.muted}>エリア移動時もこの衣装で表示されます</Text></View></View>
-      </Card>
-
-      <Card>
-        <Text style={ui.h2}>装備変更</Text>
-        <Text style={ui.body}>交換済みの一式・ロッド・リール・クーラーを選んで変更できます。</Text>
-
-        <Text style={styles.gearHeading}>一式</Text>
-        <View style={styles.choiceGrid}>
-          <Pressable onPress={async () => { await unequipOutfit(); await reloadEquipment(); }} style={[styles.choice, outfitStage === 0 && styles.activeChoice]}>
-            <AnglerArt stage={0} height={96} /><Text style={styles.choiceName}>普段着</Text><Text style={styles.choiceState}>{outfitStage === 0 ? "着用中" : "着替える"}</Text>
-          </Pressable>
-          {[1, 2, 3, 4].filter((stage) => ["hat", "top", "bottom", "shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${stage}`))).map((stage) => (
-            <Pressable key={stage} onPress={async () => { await equipOutfitSet(stage); await reloadEquipment(); }} style={[styles.choice, outfitStage === stage && styles.activeChoice]}>
-              <AnglerArt stage={stage} height={96} /><Text numberOfLines={1} style={styles.choiceName}>{["ライトアングラー", "ウォータープルーフ", "ストームフィッシャー", "海王スタイル"][stage - 1]}</Text><Text style={styles.choiceState}>{outfitStage === stage ? "着用中" : "着替える"}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {equipmentKinds.map(({ kind, label, icon }) => {
-          const ownedItems = SHOP.filter((item) => item.kind === kind && inventory.some((row) => row.item_id === item.id));
-          const activeId = inventory.find((row) => row.equipped === 1 && SHOP.some((item) => item.id === row.item_id && item.kind === kind))?.item_id;
-          return <View key={kind} style={styles.gearSection}>
-            <Text style={styles.gearHeading}>{icon} {label}</Text>
-            <View style={styles.gearChoices}>
-              <View style={styles.defaultGear}><Text style={styles.defaultGearName}>初期装備</Text><Button title={!activeId ? "装備中" : "戻す"} disabled={!activeId} kind="secondary" onPress={async () => { await unequipKind(kind); await reloadEquipment(); }} /></View>
-              {ownedItems.map((item) => {
-                const active = activeId === item.id;
-                return <View key={item.id} style={[styles.gearChoice, active && styles.activeChoice]}><GearArt itemId={item.id} size={55} /><Text numberOfLines={1} style={styles.gearChoiceName}>{item.name}</Text><Button title={active ? "装備中" : "装備"} disabled={active} kind="secondary" onPress={async () => { await equipItem(item.id, kind); await reloadEquipment(); }} /></View>;
-              })}
-            </View>
-          </View>;
-        })}
       </Card>
 
       <Card>
@@ -148,24 +153,55 @@ export default function MyPage() {
           <Text style={styles.chevron}>›</Text>
         </Pressable>
       </View>
+
+      <Modal visible={equipmentModal !== null} transparent animationType="fade" onRequestClose={() => setEquipmentModal(null)}>
+        <View style={styles.modalBackdrop}><View style={styles.equipmentSheet}>
+          <Text style={styles.modalEyebrow}>EQUIPMENT</Text>
+          <Text style={styles.modalTitle}>{equipmentModal === "outfit" ? "一式を変更" : `${equipmentKinds.find((item) => item.kind === equipmentModal)?.label ?? "装備"}を変更`}</Text>
+          <ScrollView contentContainerStyle={styles.modalChoices}>
+            {equipmentModal === "outfit" ? <>
+              {[0,1,2,3,4].filter((stage) => stage === 0 || ["hat","top","bottom","shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${stage}`))).map((stage) => <Pressable key={stage} onPress={async () => { if (stage === 0) await unequipOutfit(); else await equipOutfitSet(stage); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,outfitStage === stage && styles.activeChoice]}><AnglerArt stage={stage} height={112} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{outfitNames[stage]}</Text><Text style={styles.choiceState}>{outfitStage === stage ? "現在着用中" : "タップして着替える"}</Text></View></Pressable>)}
+            </> : equipmentModal ? <>
+              {(() => { const kind=equipmentModal; const active=currentGear(kind); return <>
+                <Pressable onPress={async () => { await unequipKind(kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,!active && styles.activeChoice]}><Text style={styles.modalDefaultIcon}>初期</Text><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>初期装備</Text><Text style={styles.choiceState}>{!active ? "現在装備中" : "タップして戻す"}</Text></View></Pressable>
+                {SHOP.filter((item) => item.kind === kind && inventory.some((row) => row.item_id === item.id)).map((item) => <Pressable key={item.id} onPress={async () => { await equipItem(item.id,kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,active?.id === item.id && styles.activeChoice]}><GearArt itemId={item.id} size={70} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{item.name}</Text><Text style={styles.choiceState}>{active?.id === item.id ? "現在装備中" : "タップして装備"}</Text></View></Pressable>)}
+              </>; })()}
+            </> : null}
+          </ScrollView>
+          <Button title="閉じる" kind="secondary" onPress={() => setEquipmentModal(null)} />
+        </View></View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  statusCard: { gap:8, padding:17, borderWidth:2, borderColor:colors.aqua, backgroundColor:"#F7FFFF" },
+  statusHeading: { color:colors.ocean, fontSize:12, fontWeight:"900", letterSpacing:1.5, marginBottom:3 },
+  statusRow: { minHeight:37, flexDirection:"row", alignItems:"center", justifyContent:"space-between", gap:8 },
+  statusLabel: { flex:1, color:colors.ink, fontSize:15, fontWeight:"900" },
+  statusValue: { maxWidth:"57%", color:colors.navy, fontSize:22, fontWeight:"900", textAlign:"right" },
+  statusTitle: { color:colors.coral, fontSize:18 },
+  statusBlank: { height:17, marginTop:3, borderTopWidth:1, borderTopColor:colors.line },
+  todayStatusRow: { minHeight:43, borderRadius:12, paddingHorizontal:11, backgroundColor:colors.foam },
+  todayStatusLabel: { flex:1, color:colors.ocean, fontSize:15, fontWeight:"900" },
+  todayStatusValue: { color:colors.coral, fontSize:23, fontWeight:"900", textAlign:"right" },
   profile: { gap: 12 },
   profileHeader: { flexDirection: "row", alignItems: "center", gap: 14 },
   avatar: { width: 70, height: 70, borderRadius: 35, alignItems: "center", justifyContent: "center", backgroundColor: colors.foam, borderWidth: 2, borderColor: colors.aqua },
   avatarText: { fontSize: 35 },
   profileInfo: { flex: 1 },
   playerName: { color: colors.navy, fontSize: 20, fontWeight: "900" },
-  playerLevel: { alignSelf:"flex-start", color:colors.white, fontSize:11, fontWeight:"900", marginVertical:3, paddingHorizontal:9, paddingVertical:3, borderRadius:99, backgroundColor:colors.ocean },
   titleText: { color: colors.coral, fontSize: 11, fontWeight: "900", marginTop: 4 },
-  expBlock: { gap:5 }, expLabel: { color:colors.muted, fontSize:9, fontWeight:"800" }, reelBonus: { color:colors.coral, fontSize:10, fontWeight:"900" }, expTrack: { height:9, borderRadius:9, overflow:"hidden", backgroundColor:colors.line }, expFill: { height:"100%", borderRadius:9, backgroundColor:colors.gold },
-  currentOutfit: { flexDirection: "row", alignItems: "center", minHeight: 170, borderRadius: 17, overflow: "hidden", backgroundColor: colors.foam },
-  outfitCopy: { flex: 1, paddingRight: 12 },
-  outfitLabel: { color: colors.ocean, fontSize: 10, fontWeight: "900" },
-  outfitName: { color: colors.navy, fontSize: 17, fontWeight: "900", marginVertical: 4 },
+  expBlock: { gap:5, marginTop:5 }, expLabel: { color:colors.muted, fontSize:10, fontWeight:"800" }, expTrack: { height:10, borderRadius:9, overflow:"hidden", backgroundColor:colors.line }, expFill: { height:"100%", borderRadius:9, backgroundColor:colors.gold },
+  equipmentBoard:{minHeight:350,flexDirection:"row",gap:10,padding:10,borderRadius:18,overflow:"hidden",backgroundColor:"#17647F",borderWidth:2,borderColor:"#073D50"},
+  slotColumn:{width:88,gap:8},
+  slotButton:{height:76,alignItems:"center",justifyContent:"center",overflow:"hidden",borderRadius:5,backgroundColor:colors.white,borderWidth:2,borderColor:"rgba(255,255,255,.7)"},
+  slotIcon:{fontSize:27},slotLabel:{color:colors.navy,fontSize:11,fontWeight:"900",marginTop:-2},
+  outfitStage:{flex:1,alignItems:"center",justifyContent:"center",overflow:"hidden"},
+  outfitStageTitle:{position:"absolute",top:120,zIndex:2,color:colors.white,fontSize:28,fontWeight:"900",textShadowColor:"rgba(0,30,45,.8)",textShadowRadius:6},
+  outfitStageName:{position:"absolute",bottom:28,color:colors.white,fontSize:15,fontWeight:"900",textShadowColor:"#00384D",textShadowRadius:5},
+  outfitStageHint:{position:"absolute",bottom:7,color:"#BFEAF2",fontSize:9,fontWeight:"800"},
   gearHeading: { color: colors.navy, fontSize: 15, fontWeight: "900", marginTop: 15, marginBottom: 7 },
   choiceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   choice: { width: "48.5%", minHeight: 140, alignItems: "center", justifyContent: "flex-end", padding: 8, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.foam, overflow: "hidden" },
@@ -178,6 +214,11 @@ const styles = StyleSheet.create({
   defaultGearName: { flex: 1, color: colors.ink, fontWeight: "900" },
   gearChoice: { flexDirection: "row", alignItems: "center", gap: 9, padding: 8, borderRadius: 13, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
   gearChoiceName: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: "900" },
+  modalBackdrop:{flex:1,justifyContent:"center",padding:18,backgroundColor:"rgba(0,19,29,.82)"},
+  equipmentSheet:{maxHeight:"86%",gap:10,padding:16,borderRadius:25,backgroundColor:colors.white},
+  modalEyebrow:{color:colors.ocean,fontSize:10,fontWeight:"900",letterSpacing:1.5},modalTitle:{color:colors.navy,fontSize:24,fontWeight:"900"},
+  modalChoices:{gap:8,paddingVertical:4},modalChoice:{minHeight:88,flexDirection:"row",alignItems:"center",gap:12,padding:9,borderRadius:15,borderWidth:2,borderColor:colors.line,backgroundColor:colors.foam,overflow:"hidden"},
+  modalChoiceBody:{flex:1},modalChoiceName:{color:colors.navy,fontSize:15,fontWeight:"900"},modalDefaultIcon:{width:65,height:65,textAlign:"center",textAlignVertical:"center",borderRadius:14,color:colors.ocean,fontSize:15,fontWeight:"900",backgroundColor:colors.white},
   stats: { flexDirection: "row", gap: 7, marginTop: 12 },
   stat: { flex: 1, minHeight: 75, alignItems: "center", justifyContent: "center", padding: 7, borderRadius: 13, backgroundColor: colors.foam },
   statLabel: { color: colors.muted, fontSize: 10, textAlign: "center" },
