@@ -8,6 +8,7 @@ dist-android-check/
 dist-health-check/
 dist-map-outfit-check/
 dist-route-check/
+dist-check/
 *.jks
 *.keystore
 *.apk

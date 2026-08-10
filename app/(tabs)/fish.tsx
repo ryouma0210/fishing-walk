@@ -105,7 +105,7 @@ function WeatherEffects({ speed }: { speed: number }) {
   );
 }
 
-function ReelWindingIndicator({ active, direction }: { active: boolean; direction: -1 | 0 | 1 }) {
+function ReelButtonContent({ active, direction }: { active: boolean; direction: -1 | 1 }) {
   const [turn] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!active) { turn.setValue(0); return; }
@@ -113,11 +113,13 @@ function ReelWindingIndicator({ active, direction }: { active: boolean; directio
     loop.start();
     return () => loop.stop();
   }, [active, turn]);
-  if (!active) return null;
   const handleRotation = turn.interpolate({ inputRange:[0,1], outputRange:direction < 0 ? ["0deg","-360deg"] : ["0deg","360deg"] });
   const spoolRotation = turn.interpolate({ inputRange:[0,1], outputRange:direction < 0 ? ["0deg","720deg"] : ["0deg","-720deg"] });
-  return <View style={styles.windingIndicator}>
-    <Text style={styles.windingLabel}>{direction < 0 ? "左巻き中" : "右巻き中"}</Text>
+  if (!active) return <>
+    <Text style={styles.reelArrow}>{direction < 0 ? "←" : "→"}</Text>
+    <Text style={styles.reelText}>{direction < 0 ? "左へ竿を寝かせて巻く" : "右へ竿を寝かせて巻く"}</Text>
+  </>;
+  return <View style={styles.buttonReelActive}>
     <View style={styles.windingReelBody}>
       <Animated.View style={[styles.windingSpool, { transform:[{ rotate:spoolRotation }] }]}>
         <View style={styles.windingSpoolLine} />
@@ -129,7 +131,7 @@ function ReelWindingIndicator({ active, direction }: { active: boolean; directio
         <View style={styles.windingHandleKnob} />
       </Animated.View>
     </View>
-    <Text style={styles.windingMotion}>↻ 糸を巻き取っています</Text>
+    <Text style={styles.buttonReelLabel}>{direction < 0 ? "左巻き中" : "右巻き中"}</Text>
   </View>;
 }
 
@@ -653,6 +655,7 @@ export default function FishScreen() {
           </View>
           <Text style={styles.distanceHint}>{timingFeedback || "魚の方向へ竿を寝かせて巻く"}</Text>
         </View>}
+        {phase === "battle" && <Pressable onPress={exitFishing} style={styles.battleExitButton}><Text style={styles.battleExitText}>釣りをやめる</Text></Pressable>}
 
         <View style={styles.waterOverlay}>
           {(phase === "casting" || phase === "approach" || phase === "bite") && <View style={styles.approachMessageBubble}><Text style={styles.approachTitle}>{phase === "casting" ? "仕掛けを投入…" : phase === "bite" ? "魚が食いついた！" : approachProgress < 55 ? "魚影が近づいている…" : "ウキのすぐ近く！"}</Text></View>}
@@ -717,12 +720,10 @@ export default function FishScreen() {
                     }}
                     style={({ pressed }) => [styles.reelButton, fishDirection === direction && styles.reelSuggested, pressed && styles.reelPressed]}
                   >
-                    <Text style={styles.reelArrow}>{direction < 0 ? "←" : "→"}</Text>
-                    <Text style={styles.reelText}>{direction < 0 ? "左へ竿を寝かせて巻く" : "右へ竿を寝かせて巻く"}</Text>
+                    <ReelButtonContent active={isReeling && rodDirection === direction} direction={direction} />
                   </Pressable>
                 ))}
               </View>
-              <ReelWindingIndicator active={isReeling} direction={rodDirection} />
               <Text style={styles.reelSubText}>魚影と同じ方向なら距離が縮み、逆方向や放置では魚が離れます</Text>
             </>}
           </View>
@@ -830,7 +831,7 @@ const styles = StyleSheet.create({
   baitChangeText: { color: colors.white, fontSize: 10, fontWeight: "900" },
   distanceHud: { position:"absolute", top:8, left:10, right:10, zIndex:20, borderRadius:16, padding:10, backgroundColor:"rgba(255,255,255,.96)", borderWidth:2, borderColor:colors.navy, elevation:16 },
   bossDistanceHud: { borderColor:"#E9B949", backgroundColor:"rgba(255,248,222,.97)" },
-  distanceHudHeader: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", marginBottom:5 },
+  distanceHudHeader: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", marginBottom:5, paddingRight:76 },
   distanceHudTitle: { color:colors.navy, fontSize:12, fontWeight:"900" },
   distanceMeters: { color:colors.coral, fontSize:16, fontWeight:"900" },
   distanceGaugeTop: { height:34, borderRadius:10, overflow:"hidden", borderWidth:2, borderColor:colors.navy, flexDirection:"row", position:"relative" },
@@ -918,16 +919,15 @@ const styles = StyleSheet.create({
   reelPressed: { backgroundColor: colors.coral, transform: [{ scale: 0.98 }] },
   reelArrow: { color: "#FFD963", fontSize: 22, lineHeight: 23, fontWeight: "900" },
   reelText: { color: colors.white, fontWeight: "900", fontSize: 11, textAlign:"center" },
-  windingIndicator: { minHeight:82, borderRadius:15, paddingHorizontal:12, paddingVertical:7, flexDirection:"row", alignItems:"center", justifyContent:"center", gap:12, backgroundColor:"#E3F8F6", borderWidth:2, borderColor:colors.aqua },
-  windingLabel: { width:55, color:colors.ocean, fontSize:11, fontWeight:"900", textAlign:"center" },
-  windingReelBody: { width:66, height:66, borderRadius:33, alignItems:"center", justifyContent:"center", backgroundColor:"#073947", borderWidth:4, borderColor:"#F2B93B", shadowColor:"#002832", shadowOpacity:.5, shadowRadius:5, elevation:5 },
-  windingSpool: { width:45, height:45, borderRadius:23, alignItems:"center", justifyContent:"center", overflow:"hidden", backgroundColor:"#087B89", borderWidth:4, borderColor:"#7CE1E4" },
-  windingSpoolLine: { position:"absolute", width:40, height:3, borderRadius:2, backgroundColor:"rgba(235,255,255,.9)" },
-  windingHub: { width:13, height:13, borderRadius:7, backgroundColor:"#FFD963", borderWidth:2, borderColor:"#FFF4B8", zIndex:2 },
-  windingHandle: { position:"absolute", width:70, height:70, alignItems:"center" },
-  windingHandleArm: { width:5, height:28, borderRadius:3, backgroundColor:"#F2B93B", marginTop:3 },
-  windingHandleKnob: { position:"absolute", top:-4, width:16, height:16, borderRadius:8, backgroundColor:colors.navy, borderWidth:3, borderColor:"#FFD963" },
-  windingMotion: { flex:1, color:colors.navy, fontSize:10, fontWeight:"900", textAlign:"center" },
+  buttonReelActive:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:8},buttonReelLabel:{color:colors.white,fontSize:11,fontWeight:"900"},
+  windingReelBody: { width:52, height:52, borderRadius:26, alignItems:"center", justifyContent:"center", backgroundColor:"#073947", borderWidth:3, borderColor:"#F2B93B", shadowColor:"#002832", shadowOpacity:.5, shadowRadius:5, elevation:5 },
+  windingSpool: { width:35, height:35, borderRadius:18, alignItems:"center", justifyContent:"center", overflow:"hidden", backgroundColor:"#087B89", borderWidth:3, borderColor:"#7CE1E4" },
+  windingSpoolLine: { position:"absolute", width:31, height:3, borderRadius:2, backgroundColor:"rgba(235,255,255,.9)" },
+  windingHub: { width:11, height:11, borderRadius:6, backgroundColor:"#FFD963", borderWidth:2, borderColor:"#FFF4B8", zIndex:2 },
+  windingHandle: { position:"absolute", width:56, height:56, alignItems:"center" },
+  windingHandleArm: { width:4, height:23, borderRadius:3, backgroundColor:"#F2B93B", marginTop:2 },
+  windingHandleKnob: { position:"absolute", top:-4, width:14, height:14, borderRadius:7, backgroundColor:colors.navy, borderWidth:3, borderColor:"#FFD963" },
+  battleExitButton:{position:"absolute",top:17,right:17,zIndex:40,elevation:30,minWidth:72,height:32,paddingHorizontal:9,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(4,35,46,.9)",borderWidth:1,borderColor:"rgba(255,255,255,.85)"},battleExitText:{color:colors.white,fontSize:9,fontWeight:"900"},
   reelSubText: { color: colors.muted, fontWeight: "700", fontSize: 9, textAlign: "center" },
   resultPanel: { position: "absolute", left: 18, right: 18, top: "12%", backgroundColor: "rgba(255,255,255,.96)", borderRadius: 24, padding: 17, alignItems: "center", gap: 6 },
   areaClear: { alignSelf: "stretch", borderRadius: 16, padding: 11, alignItems: "center", backgroundColor: "#122F48", borderWidth: 2, borderColor: "#F0B83F" },
