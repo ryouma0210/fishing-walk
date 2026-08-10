@@ -15,12 +15,14 @@ const japanMap = require("../../assets/game/japan-prefecture-map.png");
 const worldMap = require("../../assets/game/world-chapter-map.png");
 const spaceMap = require("../../assets/game/space-chapter-map.png");
 const AREAS_PER_SECTION = 8;
-const SECTION_HEIGHT = 760;
-const SECTION_X = [24,43,68,72,51,27,23,48];
+const PAGE_NODES = [
+  {x:30,y:.84},{x:32,y:.75},{x:43,y:.66},{x:61,y:.57},
+  {x:70,y:.49},{x:58,y:.41},{x:68,y:.33},{x:57,y:.25},
+];
 
 export default function JapanAreaScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [caughtIds, setCaughtIds] = useState<Set<string>>(new Set());
   const [catchSummaries, setCatchSummaries] = useState<Map<string, CatchSummary>>(new Map());
@@ -30,6 +32,7 @@ export default function JapanAreaScreen() {
   const [outfitStage, setOutfitStage] = useState(0);
   const [currentAreaId, setCurrentAreaId] = useState(FISHING_AREAS[0].id);
   const [story, setStory] = useState<ChapterId>("japan");
+  const [areaPage, setAreaPage] = useState(0);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [showUnlockConfirm, setShowUnlockConfirm] = useState(false);
   const [unlockCelebration, setUnlockCelebration] = useState<FishingArea | null>(null);
@@ -57,6 +60,8 @@ export default function JapanAreaScreen() {
       setOutfitStage(stage ?? 0);
       setCurrentAreaId(currentArea.id);
       setStory(currentArea.story);
+      const storyAreas = FISHING_AREAS.filter((area) => area.story === currentArea.story);
+      setAreaPage(Math.floor(Math.max(0,storyAreas.findIndex((area) => area.id === currentArea.id)) / AREAS_PER_SECTION));
       setSelected(null);
       setSelectedFishId(null);
       setShowUnlockConfirm(false);
@@ -88,17 +93,17 @@ export default function JapanAreaScreen() {
   const selectedState = selected ? states.find((state) => state.area.id === selected.id) : undefined;
   const currentIndex = Math.max(0, states.reduce((last, state, index) => state.unlocked ? index : last, 0));
   const sectionCount = Math.ceil(states.length / AREAS_PER_SECTION);
-  const mapHeight = sectionCount * SECTION_HEIGHT;
+  const mapHeight = Math.max(760,height - 105);
   const chapterMap = story === "japan" ? japanMap : story === "world" ? worldMap : spaceMap;
+  const pageStart = areaPage * AREAS_PER_SECTION;
+  const visibleStates = states.slice(pageStart,pageStart + AREAS_PER_SECTION);
   const nodePoint = useCallback((index: number) => {
-    const section = Math.floor(index / AREAS_PER_SECTION);
     const local = index % AREAS_PER_SECTION;
-    const sectionTop = (sectionCount - 1 - section) * SECTION_HEIGHT;
-    return { left:SECTION_X[local] / 100 * width, top:sectionTop + SECTION_HEIGHT - 120 - local * 78 };
-  }, [sectionCount, width]);
+    return { left:PAGE_NODES[local].x / 100 * width, top:PAGE_NODES[local].y * mapHeight };
+  }, [mapHeight, width]);
 
   useEffect(() => {
-    const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated:false }), 80);
+    const timer = setTimeout(() => scrollRef.current?.scrollTo({ y:0, animated:false }), 80);
     return () => clearTimeout(timer);
   }, [story]);
 
@@ -143,14 +148,11 @@ export default function JapanAreaScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator>
-        <View style={[styles.map,{height:mapHeight}]}>
-          {Array.from({length:sectionCount},(_,section) => <ImageBackground key={`section-${section}`} source={chapterMap} resizeMode="cover" style={[styles.mapSection,{top:section*SECTION_HEIGHT}]} imageStyle={section % 2 ? styles.mapSectionReverse : undefined}>
-            <View style={styles.sectionShade} />
-            <View style={styles.sectionBadge}><Text style={styles.sectionBadgeText}>STAGE {sectionCount-section}</Text></View>
-          </ImageBackground>)}
-          {states.slice(0, -1).map((state, index) => {
-            const first = nodePoint(index);
-            const second = nodePoint(index + 1);
+        <ImageBackground source={chapterMap} resizeMode="cover" style={[styles.map,{height:mapHeight}]}>
+          <View style={styles.sectionShade} />
+          {visibleStates.slice(0, -1).map((state, localIndex) => {
+            const first = nodePoint(localIndex);
+            const second = nodePoint(localIndex + 1);
             const x1 = first.left;
             const x2 = second.left;
             const y1 = first.top + 26;
@@ -160,8 +162,9 @@ export default function JapanAreaScreen() {
             const length = Math.sqrt(dx * dx + dy * dy);
             return <View key={`line-${state.area.id}`} style={[styles.route, state.unlocked && styles.routeUnlocked, { left:(x1+x2-length)/2, top:(y1+y2)/2-3, width:length, transform:[{ rotate:`${Math.atan2(dy,dx)*180/Math.PI}deg` }] }]} />;
           })}
-          {states.map((state, index) => {
-            const point = nodePoint(index);
+          {visibleStates.map((state, localIndex) => {
+            const index = pageStart + localIndex;
+            const point = nodePoint(localIndex);
             return (
               <Pressable key={state.area.id} onPress={() => void chooseArea(state)} style={[styles.node, { left:point.left, top:point.top }]}>
                 <Animated.View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.canUnlock && styles.nodeCanUnlock, state.bossCaught && styles.nodeBoss, state.completed && styles.nodeComplete, state.canUnlock && { transform:[{ scale:readyPulse.interpolate({ inputRange:[0,1], outputRange:[1,1.13] }) }] }]}>
@@ -176,14 +179,19 @@ export default function JapanAreaScreen() {
               </Pressable>
             );
           })}
-        </View>
+          <View style={styles.pageNav}>
+            <Pressable disabled={areaPage === 0} onPress={() => setAreaPage((page) => Math.max(0,page-1))} style={[styles.pageButton,areaPage === 0 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>‹ 前へ</Text></Pressable>
+            <View style={styles.pageCount}><Text style={styles.pageCountText}>{areaPage+1} / {sectionCount}</Text><Text style={styles.pageRangeText}>AREA {pageStart+1}–{Math.min(states.length,pageStart+AREAS_PER_SECTION)}</Text></View>
+            <Pressable disabled={areaPage >= sectionCount-1} onPress={() => setAreaPage((page) => Math.min(sectionCount-1,page+1))} style={[styles.pageButton,areaPage >= sectionCount-1 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>次へ ›</Text></Pressable>
+          </View>
+        </ImageBackground>
       </ScrollView>
 
       <View style={styles.header}>
         <View style={styles.chapterTabs}>
           {(["japan","world","space"] as ChapterId[]).map((id) => {
             const open = id === "japan" || id === "world" ? id === "japan" || japanClear : worldClear;
-            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
+            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setAreaPage(0); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
           })}
         </View>
         <Text style={styles.title}>{story === "japan" ? "日本全国 Fishing" : story === "world" ? "世界一周 Fishing" : "銀河宇宙 Fishing"}</Text>
@@ -281,11 +289,11 @@ export default function JapanAreaScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:0},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},mapSection:{position:"absolute",left:0,right:0,height:SECTION_HEIGHT},mapSectionReverse:{transform:[{scaleX:-1}]},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},sectionBadge:{position:"absolute",top:20,left:16,borderRadius:99,paddingHorizontal:12,paddingVertical:6,backgroundColor:"rgba(3,45,59,.72)",borderWidth:1,borderColor:"rgba(255,255,255,.55)"},sectionBadgeText:{color:colors.white,fontSize:10,fontWeight:"900",letterSpacing:1},
+  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:0},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},pageNav:{position:"absolute",left:14,right:14,bottom:14,height:54,flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},pageButton:{minWidth:84,height:43,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(5,65,81,.92)",borderWidth:2,borderColor:"rgba(255,255,255,.85)"},pageButtonDisabled:{opacity:.35},pageButtonText:{color:colors.white,fontSize:12,fontWeight:"900"},pageCount:{minWidth:92,alignItems:"center",paddingVertical:5,paddingHorizontal:10,borderRadius:12,backgroundColor:"rgba(255,255,255,.92)"},pageCountText:{color:colors.navy,fontSize:13,fontWeight:"900"},pageRangeText:{color:colors.muted,fontSize:8,fontWeight:"900"},
   header:{position:"absolute",top:10,left:12,right:12,borderRadius:18,padding:12,backgroundColor:"rgba(255,255,255,.95)",elevation:12},title:{color:colors.navy,fontSize:22,fontWeight:"900"},sub:{color:colors.muted,fontSize:10,fontWeight:"700",marginTop:2},progress:{height:6,borderRadius:9,backgroundColor:colors.line,overflow:"hidden",marginTop:8},progressFill:{height:"100%",backgroundColor:colors.coral},
   chapterTabs:{flexDirection:"row",gap:5,marginBottom:7},chapterTab:{flex:1,paddingVertical:6,borderRadius:10,alignItems:"center",backgroundColor:colors.foam},activeChapterTab:{backgroundColor:colors.ocean},lockedChapterTab:{opacity:.55},chapterTabText:{color:colors.navy,fontSize:10,fontWeight:"900"},activeChapterTabText:{color:colors.white},
   route:{position:"absolute",height:6,borderRadius:5,backgroundColor:"rgba(255,255,255,.45)",zIndex:1},routeUnlocked:{backgroundColor:"#FFD55A"},
-  node:{position:"absolute",width:112,marginLeft:-56,alignItems:"center",zIndex:3},nodeCircle:{width:48,height:48,borderRadius:24,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(17,50,65,.88)",borderWidth:3,borderColor:"#A6B8BE"},nodeUnlocked:{backgroundColor:"#FFFFFF",borderColor:colors.aqua},nodeCanUnlock:{backgroundColor:"#FFF1A8",borderWidth:4,borderColor:"#FFB300",shadowColor:"#FFD200",shadowOpacity:1,shadowRadius:14,elevation:18},nodeBoss:{backgroundColor:"#FFF3C3",borderColor:"#F2B93B"},nodeComplete:{backgroundColor:"#FFE066",borderColor:"#C88B00"},nodeMark:{color:colors.navy,fontSize:18,fontWeight:"900"},nodeLabel:{marginTop:-3,minWidth:88,borderRadius:9,paddingHorizontal:6,paddingVertical:3,backgroundColor:"rgba(4,48,63,.84)"},canUnlockLabel:{backgroundColor:"#FFB300",borderWidth:2,borderColor:"#FFF3A3",shadowColor:"#FFD200",shadowOpacity:.9,shadowRadius:8,elevation:12},completeLabel:{backgroundColor:"rgba(132,87,0,.9)"},nodeName:{color:colors.white,fontSize:10,fontWeight:"900",textAlign:"center"},canUnlockName:{color:"#3E2900",fontSize:11},nodeStatus:{color:"#D8F5F2",fontSize:8,fontWeight:"800",textAlign:"center"},canUnlockStatus:{color:"#5B3900",fontSize:8,fontWeight:"900"},nodeMarks:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:1},nodeMiniMark:{color:"#718A91",fontSize:9,fontWeight:"900"},nodeBossMark:{color:"#FFD04E"},nodeCompleteMark:{color:"#FFE866"},avatar:{position:"absolute",left:-45,bottom:-9,width:48,height:72,overflow:"hidden"},
+  node:{position:"absolute",width:112,marginLeft:-56,alignItems:"center",zIndex:3},nodeCircle:{width:48,height:48,borderRadius:24,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(17,50,65,.88)",borderWidth:3,borderColor:"#A6B8BE"},nodeUnlocked:{backgroundColor:"#FFFFFF",borderColor:colors.aqua},nodeCanUnlock:{backgroundColor:"#FFF1A8",borderWidth:4,borderColor:"#FFB300",shadowColor:"#FFD200",shadowOpacity:1,shadowRadius:14,elevation:18},nodeBoss:{backgroundColor:"#FFF3C3",borderColor:"#F2B93B"},nodeComplete:{backgroundColor:"#FFE066",borderColor:"#C88B00"},nodeMark:{color:colors.navy,fontSize:18,fontWeight:"900"},nodeLabel:{marginTop:-3,minWidth:88,borderRadius:9,paddingHorizontal:6,paddingVertical:3,backgroundColor:"rgba(4,48,63,.84)"},canUnlockLabel:{backgroundColor:"#FFB300",borderWidth:2,borderColor:"#FFF3A3",shadowColor:"#FFD200",shadowOpacity:.9,shadowRadius:8,elevation:12},completeLabel:{backgroundColor:"rgba(132,87,0,.9)"},nodeName:{color:colors.white,fontSize:10,fontWeight:"900",textAlign:"center"},canUnlockName:{color:"#3E2900",fontSize:11},nodeStatus:{color:"#D8F5F2",fontSize:8,fontWeight:"800",textAlign:"center"},canUnlockStatus:{color:"#5B3900",fontSize:8,fontWeight:"900"},nodeMarks:{flexDirection:"row",justifyContent:"center",gap:8,marginTop:1},nodeMiniMark:{color:"#718A91",fontSize:9,fontWeight:"900"},nodeBossMark:{color:"#FFD04E"},nodeCompleteMark:{color:"#FFE866"},avatar:{position:"absolute",left:82,bottom:-7,width:48,height:72,overflow:"hidden"},
   backdrop:{flex:1,justifyContent:"center",padding:13,backgroundColor:"rgba(1,20,29,.78)"},sheet:{maxHeight:"94%",borderRadius:24,padding:15,gap:9,backgroundColor:colors.white},sheetEyebrow:{color:colors.ocean,fontSize:10,fontWeight:"900",letterSpacing:1},sheetName:{color:colors.navy,fontSize:25,fontWeight:"900"},readySheetName:{color:"#E99A00"},lockBox:{borderRadius:14,padding:13,backgroundColor:"#EDF2F2"},lockTitle:{color:colors.navy,fontWeight:"900"},lockText:{color:colors.muted,fontSize:11,marginTop:4},summaryRow:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",padding:10,borderRadius:14,backgroundColor:colors.foam},summaryLabel:{color:colors.ink,fontWeight:"800"},summaryValue:{color:colors.navy,fontSize:21,fontWeight:"900"},marks:{flexDirection:"row",justifyContent:"space-between",gap:6},markText:{color:colors.muted,fontSize:10,fontWeight:"900"},goldText:{color:"#BA7A00",fontSize:11},products:{color:colors.coral,fontSize:10,fontWeight:"900"},fishGrid:{flexDirection:"row",flexWrap:"wrap",gap:5},fishCell:{width:"18.8%",alignItems:"center",padding:3,borderRadius:9,backgroundColor:colors.foam},caughtFishCell:{borderWidth:1,borderColor:colors.aqua,backgroundColor:"#E2F8F5"},fishArt:{width:50,height:50,alignItems:"center",justifyContent:"center"},question:{color:colors.navy,fontSize:31,fontWeight:"900",opacity:.7},fishName:{maxWidth:"100%",color:colors.ink,fontSize:7,fontWeight:"900"},fishRank:{color:colors.muted,fontSize:6,fontWeight:"800"},
   detailBackdrop:{flex:1,justifyContent:"center",padding:18,backgroundColor:"rgba(0,15,23,.88)"},fishDetailSheet:{borderRadius:26,padding:17,gap:10,backgroundColor:colors.white,alignItems:"stretch"},detailEyebrow:{color:colors.ocean,fontSize:12,fontWeight:"900",letterSpacing:1.5,textAlign:"center"},detailArt:{height:220,alignItems:"center",justifyContent:"center",borderRadius:20,backgroundColor:"#E7F8F7",overflow:"hidden"},detailName:{color:colors.navy,fontSize:27,fontWeight:"900",textAlign:"center"},detailDescription:{color:colors.muted,fontSize:12,lineHeight:18,textAlign:"center"},detailGrid:{flexDirection:"row",flexWrap:"wrap",gap:7},detailStat:{width:"48.8%",borderRadius:13,padding:10,backgroundColor:colors.foam},detailStatLabel:{color:colors.muted,fontSize:9,fontWeight:"800"},detailStatValue:{color:colors.navy,fontSize:14,fontWeight:"900",marginTop:3},detailRange:{color:colors.ocean,fontSize:11,fontWeight:"900",textAlign:"center"},
   confirmBackdrop:{flex:1,alignItems:"center",justifyContent:"center",padding:22,backgroundColor:"rgba(0,16,24,.84)"},confirmSheet:{width:"100%",borderRadius:26,padding:20,gap:10,backgroundColor:colors.white,alignItems:"center"},confirmIcon:{fontSize:54},confirmTitle:{color:colors.navy,fontSize:23,fontWeight:"900"},confirmArea:{color:colors.coral,fontSize:20,fontWeight:"900"},confirmText:{color:colors.muted,fontSize:12,lineHeight:18,textAlign:"center"},confirmActions:{width:"100%",flexDirection:"row",gap:8,marginTop:5},confirmAction:{flex:1},
