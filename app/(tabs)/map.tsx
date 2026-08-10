@@ -14,28 +14,9 @@ import { FISH, HABITAT_NAMES } from "../../src/constants/game";
 const japanMap = require("../../assets/game/japan-prefecture-map.png");
 const worldMap = require("../../assets/game/world-chapter-map.png");
 const spaceMap = require("../../assets/game/space-chapter-map.png");
-const MAP_HEIGHT = 3450;
-const JAPAN_ROUTE = [
-  { y:.08, x:.75 }, { y:.18, x:.68 }, { y:.31, x:.67 }, { y:.43, x:.59 },
-  { y:.52, x:.48 }, { y:.60, x:.34 }, { y:.69, x:.22 }, { y:.77, x:.17 },
-];
-const WORLD_ROUTE = [
-  { y:.07, x:.48 }, { y:.18, x:.57 }, { y:.30, x:.40 }, { y:.42, x:.58 },
-  { y:.54, x:.33 }, { y:.66, x:.62 }, { y:.78, x:.40 }, { y:.92, x:.56 },
-];
-const SPACE_ROUTE = [
-  { y:.06, x:.50 }, { y:.17, x:.59 }, { y:.29, x:.45 }, { y:.40, x:.57 },
-  { y:.52, x:.42 }, { y:.64, x:.55 }, { y:.76, x:.44 }, { y:.91, x:.54 },
-];
-
-const routeX = (route: { y:number; x:number }[], y: number) => {
-  const upper = route.findIndex((point) => point.y >= y);
-  if (upper <= 0) return route[0].x;
-  const from = route[upper - 1];
-  const to = route[upper];
-  const progress = (y - from.y) / (to.y - from.y);
-  return from.x + (to.x - from.x) * progress;
-};
+const AREAS_PER_SECTION = 8;
+const SECTION_HEIGHT = 760;
+const SECTION_X = [24,43,68,72,51,27,23,48];
 
 export default function JapanAreaScreen() {
   const router = useRouter();
@@ -106,18 +87,15 @@ export default function JapanAreaScreen() {
   }, [caughtIds, totalSteps, story, chapterOpen, unlockedAreaIds]);
   const selectedState = selected ? states.find((state) => state.area.id === selected.id) : undefined;
   const currentIndex = Math.max(0, states.reduce((last, state, index) => state.unlocked ? index : last, 0));
+  const sectionCount = Math.ceil(states.length / AREAS_PER_SECTION);
+  const mapHeight = sectionCount * SECTION_HEIGHT;
+  const chapterMap = story === "japan" ? japanMap : story === "world" ? worldMap : spaceMap;
   const nodePoint = useCallback((index: number) => {
-    if (story === "japan") {
-      // 長崎から北海道までは日本列島の陸地を北上し、最終地点だけ沖縄へ移動する。
-      const y = index === 46 ? .90 : .77 - index / 45 * .69;
-      const x = index === 46 ? .23 : routeX(JAPAN_ROUTE,y) + ((index % 3) - 1) * .018;
-      return { left:x * width, top:y * MAP_HEIGHT };
-    }
-    const y = .91 - index / Math.max(1,states.length - 1) * .84;
-    const route = story === "world" ? WORLD_ROUTE : SPACE_ROUTE;
-    const x = routeX(route,y) + ((index % 3) - 1) * .018;
-    return { left:x * width, top:y * MAP_HEIGHT };
-  }, [story, states.length, width]);
+    const section = Math.floor(index / AREAS_PER_SECTION);
+    const local = index % AREAS_PER_SECTION;
+    const sectionTop = (sectionCount - 1 - section) * SECTION_HEIGHT;
+    return { left:SECTION_X[local] / 100 * width, top:sectionTop + SECTION_HEIGHT - 120 - local * 78 };
+  }, [sectionCount, width]);
 
   useEffect(() => {
     const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated:false }), 80);
@@ -165,7 +143,11 @@ export default function JapanAreaScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator>
-        <ImageBackground source={story === "japan" ? japanMap : story === "world" ? worldMap : spaceMap} resizeMode="stretch" style={styles.map}>
+        <View style={[styles.map,{height:mapHeight}]}>
+          {Array.from({length:sectionCount},(_,section) => <ImageBackground key={`section-${section}`} source={chapterMap} resizeMode="cover" style={[styles.mapSection,{top:section*SECTION_HEIGHT}]} imageStyle={section % 2 ? styles.mapSectionReverse : undefined}>
+            <View style={styles.sectionShade} />
+            <View style={styles.sectionBadge}><Text style={styles.sectionBadgeText}>STAGE {sectionCount-section}</Text></View>
+          </ImageBackground>)}
           {states.slice(0, -1).map((state, index) => {
             const first = nodePoint(index);
             const second = nodePoint(index + 1);
@@ -194,7 +176,7 @@ export default function JapanAreaScreen() {
               </Pressable>
             );
           })}
-        </ImageBackground>
+        </View>
       </ScrollView>
 
       <View style={styles.header}>
@@ -299,7 +281,7 @@ export default function JapanAreaScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:0},map:{height:MAP_HEIGHT,width:"100%",overflow:"hidden"},
+  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:0},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},mapSection:{position:"absolute",left:0,right:0,height:SECTION_HEIGHT},mapSectionReverse:{transform:[{scaleX:-1}]},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},sectionBadge:{position:"absolute",top:20,left:16,borderRadius:99,paddingHorizontal:12,paddingVertical:6,backgroundColor:"rgba(3,45,59,.72)",borderWidth:1,borderColor:"rgba(255,255,255,.55)"},sectionBadgeText:{color:colors.white,fontSize:10,fontWeight:"900",letterSpacing:1},
   header:{position:"absolute",top:10,left:12,right:12,borderRadius:18,padding:12,backgroundColor:"rgba(255,255,255,.95)",elevation:12},title:{color:colors.navy,fontSize:22,fontWeight:"900"},sub:{color:colors.muted,fontSize:10,fontWeight:"700",marginTop:2},progress:{height:6,borderRadius:9,backgroundColor:colors.line,overflow:"hidden",marginTop:8},progressFill:{height:"100%",backgroundColor:colors.coral},
   chapterTabs:{flexDirection:"row",gap:5,marginBottom:7},chapterTab:{flex:1,paddingVertical:6,borderRadius:10,alignItems:"center",backgroundColor:colors.foam},activeChapterTab:{backgroundColor:colors.ocean},lockedChapterTab:{opacity:.55},chapterTabText:{color:colors.navy,fontSize:10,fontWeight:"900"},activeChapterTabText:{color:colors.white},
   route:{position:"absolute",height:6,borderRadius:5,backgroundColor:"rgba(255,255,255,.45)",zIndex:1},routeUnlocked:{backgroundColor:"#FFD55A"},
