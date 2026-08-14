@@ -3,13 +3,14 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Card, Header, Screen, ui } from "../../src/components/ui";
 import { AnglerArt, GearArt } from "../../src/components/GameArt";
-import { FISHING_AREAS } from "../../src/constants/areas";
 import { GearKind, SHOP } from "../../src/constants/game";
 import { CatchSummary, equipItem, equipOutfitSet, getCatchStats, getCatchSummaries, getInventory, getPlayerProgress, getTotalSteps, getWalkPoints, InventoryRow, unequipKind, unequipOutfit } from "../../src/database/db";
 import { syncTodaySteps } from "../../src/services/stepService";
 import { colors } from "../../src/constants/theme";
 import { getDailyMissions } from "../../src/services/dailyService";
 import { calculatePlayerProgress, PlayerProgress } from "../../src/constants/player";
+import { getSelectedTitle } from "../../src/services/titleService";
+import { isTitleUnlocked, TITLE_DEFINITIONS, TitleValues } from "../../src/constants/titles";
 
 type EquipmentStats = { windingPercent:number; windingPerformance:number; resistance:number; size:number; capacity:number };
 function equipmentStats(levelBonus:number,outfitStage:number,rodPower:number,reelPower:number,capacity:number): EquipmentStats {
@@ -34,9 +35,10 @@ export default function MyPage() {
   const [inventory, setInventory] = useState<InventoryRow[]>([]);
   const [playerProgress, setPlayerProgress] = useState<PlayerProgress>(() => calculatePlayerProgress(0));
   const [equipmentModal, setEquipmentModal] = useState<"outfit" | GearKind | null>(null);
+  const [selectedTitle, setSelectedTitleState] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => {
-    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getTotalSteps(), getWalkPoints(), getInventory(), getPlayerProgress()]).then(async ([catchStats, catches, today, allSteps, wallet, inventory, progression]) => {
+    Promise.all([getCatchStats(), getCatchSummaries(), syncTodaySteps(), getTotalSteps(), getWalkPoints(), getInventory(), getPlayerProgress(),getSelectedTitle()]).then(async ([catchStats, catches, today, allSteps, wallet, inventory, progression,savedTitle]) => {
       setStats(catchStats);
       setRows(catches);
       setSteps(today.steps);
@@ -44,20 +46,17 @@ export default function MyPage() {
       setPoints(wallet);
       setInventory(inventory);
       setPlayerProgress(progression);
+      setSelectedTitleState(savedTitle);
       setOutfitStage([1, 2, 3, 4].find((level) => ["hat", "top", "bottom", "shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${level}` && row.equipped === 1))) ?? 0);
       const missions = await getDailyMissions();
       setDaily({ completed: missions.filter((mission) => mission.claimed).length, total: missions.length, claimable: missions.filter((mission) => !mission.claimed && mission.current >= mission.target).length });
     });
   }, []));
 
-  const titles = [
-    { name: "はじめての一歩", unlocked: steps >= 1000 },
-    { name: "魚博士", unlocked: rows.length >= 20 },
-    { name: "大物ハンター", unlocked: stats.largest >= 100 },
-    { name: "全国図鑑マスター", unlocked: rows.length === FISHING_AREAS.flatMap((area) => area.fishIds).length },
-  ];
+  const titleValues:TitleValues={steps:totalSteps,catches:stats.count,unique:rows.length,largest:stats.largest,level:playerProgress.level};
+  const titles=TITLE_DEFINITIONS.map((title) => ({...title,unlocked:isTitleUnlocked(title,titleValues)}));
   const unlockedTitles = titles.filter((title) => title.unlocked).length;
-  const currentTitle = titles.filter((title) => title.unlocked).at(-1)?.name ?? "未獲得";
+  const currentTitle = titles.some((title) => title.name === selectedTitle && title.unlocked) ? selectedTitle! : titles.filter((title) => title.unlocked).at(-1)?.name ?? "未獲得";
   const todayEarnedPoints = Math.floor(steps / 100);
   const equipmentKinds: { kind: GearKind; label: string; icon: string }[] = [
     { kind: "rod", label: "ロッド", icon: "🎣" },
@@ -91,10 +90,14 @@ export default function MyPage() {
       <Header title="My Page" sub="歩数・釣果・称号・設定" />
       <Card style={styles.statusCard}>
         <Text style={styles.statusHeading}>PLAYER STATUS</Text>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
         <View style={styles.statusRow}><Text style={styles.statusLabel}>称号：</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusValue, styles.statusTitle]}>{currentTitle}</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
+        <View style={styles.expBlock}>
+          <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
+          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
+        </View>
         <View style={styles.statusBlank} />
         <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日の歩数：</Text><Text style={styles.todayStatusValue}>{steps.toLocaleString()}歩</Text></View>
         <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日獲得pt：</Text><Text style={styles.todayStatusValue}>{todayEarnedPoints.toLocaleString()}pt</Text></View>
@@ -105,21 +108,9 @@ export default function MyPage() {
         <View style={styles.performanceRow}><Text style={styles.performanceLabel}>魚の抵抗軽減</Text><Text style={styles.performanceValue}>{currentEquipmentStats.resistance.toFixed(1)}%</Text></View>
         <View style={styles.performanceRow}><Text style={styles.performanceLabel}>サイズ補正</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.size.toFixed(0)}%</Text></View>
         <View style={styles.performanceRow}><Text style={styles.performanceLabel}>1日の釣獲上限</Text><Text style={styles.performanceValue}>{currentEquipmentStats.capacity.toLocaleString()}匹</Text></View>
-        <View style={styles.expBlock}>
-          <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
-          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
-        </View>
       </Card>
 
       <Card style={styles.profile}>
-        <View style={styles.profileHeader}>
-          <View style={styles.avatar}><Text style={styles.avatarText}>🎣</Text></View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.playerName}>Fishing Walker</Text>
-            <Text style={ui.muted}>現在の衣装と装備</Text>
-            <Text style={styles.titleText}>獲得称号 {unlockedTitles}/{titles.length}</Text>
-          </View>
-        </View>
         <View style={styles.equipmentBoard}>
           <View style={styles.slotColumn}>
             {[{kind:"outfit" as const,label:"一式"},{kind:"rod" as const,label:"ロッド"},{kind:"reel" as const,label:"リール"},{kind:"cooler" as const,label:"クーラー"}].map(({kind,label}) => {
@@ -131,7 +122,6 @@ export default function MyPage() {
             })}
           </View>
           <View style={styles.outfitStage}>
-            <Text style={styles.outfitStageTitle}>現在の衣装</Text>
             <AnglerArt stage={outfitStage} height={245} />
             <Text style={styles.outfitStageName}>{outfitNames[outfitStage]}</Text>
             <Text style={styles.outfitStageHint}>左の装備をタップして変更</Text>
