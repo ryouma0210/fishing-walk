@@ -11,21 +11,25 @@ import { colors } from "../../src/constants/theme";
 import { ChapterId } from "../../src/constants/expansionData";
 import { FISH, HABITAT_NAMES } from "../../src/constants/game";
 
-const japanMap = require("../../assets/game/japan-prefecture-map.png");
-const worldMap = require("../../assets/game/world-chapter-map.png");
-const spaceMap = require("../../assets/game/space-chapter-map.png");
+const japanMap = require("../../assets/game/japan-geographic-map.png");
+const worldMap = require("../../assets/game/world-geographic-map.png");
+const spaceMap = require("../../assets/game/space-route-map.png");
 const AREAS_PER_SECTION = 4;
 const PAGE_NODES = [
   {x:20,y:.763},{x:19,y:.590},{x:65,y:.503},{x:76,y:.419},
 ];
 const JAPAN_PREFECTURE_POSITIONS: Record<string,{x:number;y:number}> = {
-  hokkaido:{x:76,y:.14},aomori:{x:72,y:.255},iwate:{x:77,y:.29},miyagi:{x:78,y:.325},akita:{x:68,y:.29},yamagata:{x:69,y:.33},fukushima:{x:72,y:.36},
-  ibaraki:{x:79,y:.40},tochigi:{x:74,y:.38},gunma:{x:69,y:.385},saitama:{x:73,y:.405},chiba:{x:80,y:.435},tokyo:{x:74,y:.425},kanagawa:{x:72,y:.45},
-  niigata:{x:65,y:.35},toyama:{x:59,y:.405},ishikawa:{x:55,y:.40},fukui:{x:52,y:.44},yamanashi:{x:67,y:.435},nagano:{x:63,y:.40},gifu:{x:59,y:.445},shizuoka:{x:66,y:.475},aichi:{x:60,y:.48},
-  mie:{x:57,y:.505},shiga:{x:53,y:.47},kyoto:{x:49,y:.47},osaka:{x:49,y:.505},hyogo:{x:44,y:.49},nara:{x:53,y:.505},wakayama:{x:51,y:.535},
-  tottori:{x:39,y:.48},shimane:{x:34,y:.50},okayama:{x:40,y:.52},hiroshima:{x:34,y:.54},yamaguchi:{x:28,y:.56},tokushima:{x:43,y:.57},kagawa:{x:42,y:.54},ehime:{x:37,y:.57},kochi:{x:39,y:.605},
-  fukuoka:{x:24,y:.59},saga:{x:20,y:.615},nagasaki:{x:15,y:.635},kumamoto:{x:22,y:.655},oita:{x:28,y:.62},miyazaki:{x:27,y:.685},kagoshima:{x:22,y:.725},okinawa:{x:39,y:.885},
+  hokkaido:{x:78,y:.17},aomori:{x:68,y:.30},iwate:{x:71,y:.34},miyagi:{x:70,y:.37},akita:{x:64,y:.33},yamagata:{x:64,y:.37},fukushima:{x:65,y:.40},
+  ibaraki:{x:68,y:.45},tochigi:{x:65,y:.43},gunma:{x:62,y:.43},saitama:{x:64,y:.45},chiba:{x:69,y:.48},tokyo:{x:65,y:.47},kanagawa:{x:63,y:.49},
+  niigata:{x:59,y:.38},toyama:{x:53,y:.43},ishikawa:{x:49,y:.42},fukui:{x:46,y:.45},yamanashi:{x:60,y:.47},nagano:{x:57,y:.44},gifu:{x:52,y:.47},shizuoka:{x:59,y:.50},aichi:{x:54,y:.50},
+  mie:{x:51,y:.52},shiga:{x:48,y:.49},kyoto:{x:44,y:.49},osaka:{x:44,y:.52},hyogo:{x:39,y:.51},nara:{x:48,y:.52},wakayama:{x:46,y:.55},
+  tottori:{x:34,y:.50},shimane:{x:29,y:.51},okayama:{x:36,y:.53},hiroshima:{x:30,y:.54},yamaguchi:{x:25,y:.55},tokushima:{x:38,y:.57},kagawa:{x:37,y:.55},ehime:{x:32,y:.57},kochi:{x:34,y:.59},
+  fukuoka:{x:17,y:.56},saga:{x:13,y:.58},nagasaki:{x:9,y:.60},kumamoto:{x:15,y:.62},oita:{x:20,y:.59},miyazaki:{x:20,y:.65},kagoshima:{x:15,y:.68},okinawa:{x:25,y:.82},
 };
+const WORLD_COUNTRY_POSITIONS: Record<string,{x:number;y:number}> = {
+  south_korea:{x:.87,y:.38},china:{x:.79,y:.38},mongolia:{x:.75,y:.31},taiwan:{x:.86,y:.43},philippines:{x:.87,y:.49},vietnam:{x:.81,y:.47},thailand:{x:.79,y:.49},cambodia:{x:.81,y:.51},malaysia:{x:.81,y:.54},singapore:{x:.80,y:.56},indonesia:{x:.84,y:.58},india:{x:.72,y:.47},nepal:{x:.75,y:.43},sri_lanka:{x:.73,y:.55},uae:{x:.64,y:.47},turkey:{x:.58,y:.42},greece:{x:.55,y:.43},italy:{x:.52,y:.41},spain:{x:.47,y:.42},portugal:{x:.45,y:.42},france:{x:.49,y:.38},united_kingdom:{x:.47,y:.34},ireland:{x:.45,y:.34},netherlands:{x:.50,y:.35},belgium:{x:.49,y:.36},germany:{x:.52,y:.35},switzerland:{x:.51,y:.38},austria:{x:.54,y:.38},czechia:{x:.53,y:.36},poland:{x:.56,y:.35},denmark:{x:.52,y:.32},norway:{x:.51,y:.26},sweden:{x:.54,y:.27},finland:{x:.57,y:.27},iceland:{x:.43,y:.27},egypt:{x:.58,y:.48},morocco:{x:.46,y:.47},kenya:{x:.60,y:.59},tanzania:{x:.60,y:.63},south_africa:{x:.56,y:.70},canada:{x:.18,y:.28},united_states:{x:.18,y:.42},mexico:{x:.18,y:.52},peru:{x:.27,y:.66},brazil:{x:.33,y:.61},argentina:{x:.31,y:.76},chile:{x:.27,y:.74},australia:{x:.86,y:.67},new_zealand:{x:.95,y:.75},antarctica:{x:.58,y:.86},
+};
+const SPACE_PAGE_NODES = [{x:.54,y:.82},{x:.45,y:.67},{x:.57,y:.52},{x:.45,y:.37}];
 
 export default function JapanAreaScreen() {
   const router = useRouter();
@@ -40,7 +44,7 @@ export default function JapanAreaScreen() {
   const [currentAreaId, setCurrentAreaId] = useState(FISHING_AREAS[0].id);
   const [story, setStory] = useState<ChapterId>("japan");
   const [areaPage, setAreaPage] = useState(0);
-  const [mapZoomed, setMapZoomed] = useState(false);
+  const [mapZoomed, setMapZoomed] = useState(true);
   const [focusAreaId, setFocusAreaId] = useState(FISHING_AREAS[0].id);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [showUnlockConfirm, setShowUnlockConfirm] = useState(false);
@@ -69,6 +73,7 @@ export default function JapanAreaScreen() {
       setOutfitStage(stage ?? 0);
       setCurrentAreaId(currentArea.id);
       setFocusAreaId(currentArea.id);
+      setMapZoomed(true);
       setStory(currentArea.story);
       const storyAreas = FISHING_AREAS.filter((area) => area.story === currentArea.story);
       setAreaPage(Math.floor(Math.max(0,storyAreas.findIndex((area) => area.id === currentArea.id)) / AREAS_PER_SECTION));
@@ -113,7 +118,13 @@ export default function JapanAreaScreen() {
       const position = JAPAN_PREFECTURE_POSITIONS[slug];
       if (position) return { x:position.x / 100, y:position.y };
     }
+    if (story === "world") {
+      const slug=states[index]?.area.id.replace(/^jp_world_/,"");
+      const position=WORLD_COUNTRY_POSITIONS[slug];
+      if (position) return position;
+    }
     const local = index % AREAS_PER_SECTION;
+    if (story === "space") return SPACE_PAGE_NODES[local];
     return { x:PAGE_NODES[local].x / 100, y:PAGE_NODES[local].y };
   }, [states, story]);
   const zoomScale = mapZoomed ? 1.9 : 1;
@@ -121,8 +132,10 @@ export default function JapanAreaScreen() {
   const displayHeight = mapHeight * zoomScale;
   const focusIndex = Math.max(pageStart,states.findIndex((state) => state.area.id === focusAreaId));
   const focusPosition = areaPosition(focusIndex);
-  const mapLeft = mapZoomed ? width / 2 - focusPosition.x * displayWidth : 0;
-  const mapTop = mapZoomed ? mapHeight / 2 - focusPosition.y * displayHeight : 0;
+  const rawMapLeft = width / 2 - focusPosition.x * displayWidth;
+  const rawMapTop = mapHeight / 2 - focusPosition.y * displayHeight;
+  const mapLeft = mapZoomed ? Math.min(0,Math.max(width-displayWidth,rawMapLeft)) : 0;
+  const mapTop = mapZoomed ? Math.min(0,Math.max(mapHeight-displayHeight,rawMapTop)) : 0;
   const nodePoint = useCallback((index: number) => {
     const position = areaPosition(index);
     return { left:position.x * displayWidth, top:position.y * displayHeight };
@@ -201,7 +214,7 @@ export default function JapanAreaScreen() {
             const index = pageStart + localIndex;
             const point = nodePoint(index);
             const normalizedPoint = areaPosition(index);
-            const labelShift = story === "japan" ? (normalizedPoint.x < .32 ? 48 : normalizedPoint.x > .68 ? -48 : localIndex % 2 ? 42 : -42) : 0;
+            const labelShift = normalizedPoint.x < .32 ? 48 : normalizedPoint.x > .68 ? -48 : localIndex % 2 ? 42 : -42;
             return (
               <Pressable key={state.area.id} onPress={() => void chooseArea(state)} style={[styles.node, { left:point.left, top:point.top }]}>
                 <Animated.View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.canUnlock && styles.nodeCanUnlock, state.bossCaught && styles.nodeBoss, state.completed && styles.nodeComplete, state.canUnlock && { transform:[{ scale:readyPulse.interpolate({ inputRange:[0,1], outputRange:[1,1.13] }) }] }]}>
@@ -233,7 +246,7 @@ export default function JapanAreaScreen() {
         <View style={styles.chapterTabs}>
           {(["japan","world","space"] as ChapterId[]).map((id) => {
             const open = id === "japan" || id === "world" ? id === "japan" || japanClear : worldClear;
-            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setAreaPage(0); setMapZoomed(false); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
+            return <Pressable key={id} onPress={() => { if (open) { const first=FISHING_AREAS.find((area) => area.story === id); setStory(id); setAreaPage(0); if (first) setFocusAreaId(first.id); setMapZoomed(true); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
           })}
         </View>
         <Text style={styles.title}>{story === "japan" ? "日本全国 Fishing" : story === "world" ? "世界一周 Fishing" : "銀河宇宙 Fishing"}</Text>
