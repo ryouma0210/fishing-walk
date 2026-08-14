@@ -130,6 +130,11 @@ export default function ShopScreen() {
                   <View style={styles.outfitSetInfo}>
                     <Text style={styles.outfitSetName}>{OUTFIT_NAMES[stage - 1]}</Text>
                     <Text style={complete ? styles.complete : styles.incomplete}>{complete ? "✓ 所持済み" : "未交換"}</Text>
+                    <View style={styles.outfitEffects}>
+                      <Text style={styles.outfitEffectTitle}>一式装備効果</Text>
+                      <Text style={styles.outfitEffect}>魚の抵抗軽減　{(stage*4*.012*100).toFixed(1)}%</Text>
+                      <Text style={styles.outfitEffect}>サイズ補正　+{(stage*4*.22*100).toFixed(0)}%</Text>
+                    </View>
                     <Text style={styles.outfitPoints}>交換ポイント {setCost.toLocaleString()}pt</Text>
                     <Text style={styles.ownedPoints}>所持ポイント {points.toLocaleString()}pt</Text>
                   </View>
@@ -260,6 +265,7 @@ const styles = StyleSheet.create({
   outfitThumbnail: { width: 104, height: 164, alignItems: "center", overflow: "hidden", borderRadius: 13, backgroundColor: colors.foam },
   outfitSetInfo: { flex: 1, gap: 5 },
   outfitSetName: { fontWeight: "900", color: colors.ink },
+  outfitEffects:{padding:8,borderRadius:10,backgroundColor:"#EAF7F2",borderWidth:1,borderColor:"#BDE4D6"},outfitEffectTitle:{color:colors.ocean,fontSize:9,fontWeight:"900",marginBottom:3},outfitEffect:{color:colors.ink,fontSize:10,fontWeight:"800"},
   complete: { color: colors.ocean, fontSize: 12, fontWeight: "800" },
   incomplete: { color: colors.coral, fontSize: 12, fontWeight: "900" },
   outfitPoints: { color: colors.coral, fontSize: 11, fontWeight: "900" },

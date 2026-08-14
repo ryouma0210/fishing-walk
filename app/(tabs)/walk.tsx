@@ -11,6 +11,17 @@ import { colors } from "../../src/constants/theme";
 import { getDailyMissions } from "../../src/services/dailyService";
 import { calculatePlayerProgress, PlayerProgress } from "../../src/constants/player";
 
+type EquipmentStats = { windingPercent:number; windingPerformance:number; resistance:number; size:number; capacity:number };
+function equipmentStats(levelBonus:number,outfitStage:number,rodPower:number,reelPower:number,capacity:number): EquipmentStats {
+  const windingPerformance=(.25+reelPower*.018+rodPower*.014)/.25*(1+levelBonus)*100;
+  return { windingPercent:windingPerformance-100,windingPerformance,resistance:outfitStage*4*.012*100,size:outfitStage*4*.22*100,capacity };
+}
+function EffectChange({label,before,after,suffix="%"}:{label:string;before:number;after:number;suffix?:string}) {
+  const difference=after-before;
+  const format=(value:number) => suffix === "匹" ? Math.round(value).toLocaleString() : value.toFixed(1);
+  return <View style={styles.effectChange}><Text style={styles.effectChangeLabel}>{label}</Text><Text style={styles.effectValues}>{format(before)}{suffix} → {format(after)}{suffix}</Text><Text style={[styles.effectDelta,difference>0 ? styles.effectUp : difference<0 ? styles.effectDown : styles.effectSame]}>{difference>0 ? `▲ ${format(Math.abs(difference))}${suffix} アップ` : difference<0 ? `▼ ${format(Math.abs(difference))}${suffix} ダウン` : "変更なし"}</Text></View>;
+}
+
 export default function MyPage() {
   const router = useRouter();
   const [stats, setStats] = useState({ count: 0, unique_count: 0, largest: 0 });
@@ -63,6 +74,17 @@ export default function MyPage() {
     const id = inventory.find((row) => row.equipped === 1 && SHOP.some((item) => item.id === row.item_id && item.kind === kind))?.item_id;
     return SHOP.find((item) => item.id === id);
   };
+  const rodPower=currentGear("rod")?.power ?? 0;
+  const reelPower=currentGear("reel")?.power ?? 0;
+  const coolerCapacity=currentGear("cooler")?.dailyCapacity ?? 10;
+  const currentEquipmentStats=equipmentStats(playerProgress.reelBonusRate,outfitStage,rodPower,reelPower,coolerCapacity);
+  const candidateStats=(kind:"outfit"|GearKind,value:number) => equipmentStats(
+    playerProgress.reelBonusRate,
+    kind === "outfit" ? value : outfitStage,
+    kind === "rod" ? value : rodPower,
+    kind === "reel" ? value : reelPower,
+    kind === "cooler" ? value : coolerCapacity,
+  );
 
   return (
     <Screen>
@@ -70,13 +92,19 @@ export default function MyPage() {
       <Card style={styles.statusCard}>
         <Text style={styles.statusHeading}>PLAYER STATUS</Text>
         <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>総巻き取り(%)：</Text><Text style={styles.statusValue}>+{(playerProgress.reelBonusRate * 100).toFixed(1)}%</Text></View>
         <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
         <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
         <View style={styles.statusRow}><Text style={styles.statusLabel}>称号：</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusValue, styles.statusTitle]}>{currentTitle}</Text></View>
         <View style={styles.statusBlank} />
         <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日の歩数：</Text><Text style={styles.todayStatusValue}>{steps.toLocaleString()}歩</Text></View>
         <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日獲得pt：</Text><Text style={styles.todayStatusValue}>{todayEarnedPoints.toLocaleString()}pt</Text></View>
+        <View style={styles.statusBlank} />
+        <Text style={styles.performanceHeading}>FISHING PERFORMANCE</Text>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り(%)</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.windingPercent.toFixed(1)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り性能</Text><Text style={styles.performanceValue}>{currentEquipmentStats.windingPerformance.toFixed(1)}</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>魚の抵抗軽減</Text><Text style={styles.performanceValue}>{currentEquipmentStats.resistance.toFixed(1)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>サイズ補正</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.size.toFixed(0)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>1日の釣獲上限</Text><Text style={styles.performanceValue}>{currentEquipmentStats.capacity.toLocaleString()}匹</Text></View>
         <View style={styles.expBlock}>
           <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
           <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
@@ -160,11 +188,11 @@ export default function MyPage() {
           <Text style={styles.modalTitle}>{equipmentModal === "outfit" ? "一式を変更" : `${equipmentKinds.find((item) => item.kind === equipmentModal)?.label ?? "装備"}を変更`}</Text>
           <ScrollView contentContainerStyle={styles.modalChoices}>
             {equipmentModal === "outfit" ? <>
-              {[0,1,2,3,4].filter((stage) => stage === 0 || ["hat","top","bottom","shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${stage}`))).map((stage) => <Pressable key={stage} onPress={async () => { if (stage === 0) await unequipOutfit(); else await equipOutfitSet(stage); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,outfitStage === stage && styles.activeChoice]}><AnglerArt stage={stage} height={112} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{outfitNames[stage]}</Text><Text style={styles.choiceState}>{outfitStage === stage ? "現在着用中" : "タップして着替える"}</Text></View></Pressable>)}
+              {[0,1,2,3,4].filter((stage) => stage === 0 || ["hat","top","bottom","shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${stage}`))).map((stage) => { const next=candidateStats("outfit",stage); return <Pressable key={stage} onPress={async () => { if (stage === 0) await unequipOutfit(); else await equipOutfitSet(stage); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,outfitStage === stage && styles.activeChoice]}><AnglerArt stage={stage} height={112} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{outfitNames[stage]}</Text><Text style={styles.choiceState}>{outfitStage === stage ? "現在着用中" : "タップして着替える"}</Text><EffectChange label="魚の抵抗軽減" before={currentEquipmentStats.resistance} after={next.resistance} /><EffectChange label="サイズ補正" before={currentEquipmentStats.size} after={next.size} /></View></Pressable>;})}
             </> : equipmentModal ? <>
               {(() => { const kind=equipmentModal; const active=currentGear(kind); return <>
-                <Pressable onPress={async () => { await unequipKind(kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,!active && styles.activeChoice]}><Text style={styles.modalDefaultIcon}>初期</Text><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>初期装備</Text><Text style={styles.choiceState}>{!active ? "現在装備中" : "タップして戻す"}</Text></View></Pressable>
-                {SHOP.filter((item) => item.kind === kind && inventory.some((row) => row.item_id === item.id)).map((item) => <Pressable key={item.id} onPress={async () => { await equipItem(item.id,kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,active?.id === item.id && styles.activeChoice]}><GearArt itemId={item.id} size={70} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{item.name}</Text><Text style={styles.choiceState}>{active?.id === item.id ? "現在装備中" : "タップして装備"}</Text></View></Pressable>)}
+                <Pressable onPress={async () => { await unequipKind(kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,!active && styles.activeChoice]}><Text style={styles.modalDefaultIcon}>初期</Text><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>初期装備</Text><Text style={styles.choiceState}>{!active ? "現在装備中" : "タップして戻す"}</Text>{(() => { const next=candidateStats(kind,kind === "cooler" ? 10 : 0); return kind === "cooler" ? <EffectChange label="1日の釣獲上限" before={currentEquipmentStats.capacity} after={next.capacity} suffix="匹" /> : <EffectChange label="総巻き取り性能" before={currentEquipmentStats.windingPerformance} after={next.windingPerformance} />; })()}</View></Pressable>
+                {SHOP.filter((item) => item.kind === kind && inventory.some((row) => row.item_id === item.id)).map((item) => { const next=candidateStats(kind,kind === "cooler" ? item.dailyCapacity ?? 10 : item.power); return <Pressable key={item.id} onPress={async () => { await equipItem(item.id,kind); await reloadEquipment(); setEquipmentModal(null); }} style={[styles.modalChoice,active?.id === item.id && styles.activeChoice]}><GearArt itemId={item.id} size={70} /><View style={styles.modalChoiceBody}><Text style={styles.modalChoiceName}>{item.name}</Text><Text style={styles.choiceState}>{active?.id === item.id ? "現在装備中" : "タップして装備"}</Text><Text style={styles.itemEffect}>{item.description}</Text>{kind === "cooler" ? <EffectChange label="1日の釣獲上限" before={currentEquipmentStats.capacity} after={next.capacity} suffix="匹" /> : <EffectChange label="総巻き取り性能" before={currentEquipmentStats.windingPerformance} after={next.windingPerformance} />}</View></Pressable>;})}
               </>; })()}
             </> : null}
           </ScrollView>
@@ -186,6 +214,7 @@ const styles = StyleSheet.create({
   todayStatusRow: { minHeight:43, borderRadius:12, paddingHorizontal:11, backgroundColor:colors.foam },
   todayStatusLabel: { flex:1, color:colors.ocean, fontSize:15, fontWeight:"900" },
   todayStatusValue: { color:colors.coral, fontSize:23, fontWeight:"900", textAlign:"right" },
+  performanceHeading:{color:colors.ocean,fontSize:11,fontWeight:"900",letterSpacing:1.2},performanceRow:{minHeight:35,flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:10,borderRadius:10,backgroundColor:"#EAF7F5"},performanceLabel:{color:colors.ink,fontSize:12,fontWeight:"800"},performanceValue:{color:colors.navy,fontSize:17,fontWeight:"900"},
   profile: { gap: 12 },
   profileHeader: { flexDirection: "row", alignItems: "center", gap: 14 },
   avatar: { width: 70, height: 70, borderRadius: 35, alignItems: "center", justifyContent: "center", backgroundColor: colors.foam, borderWidth: 2, borderColor: colors.aqua },
@@ -219,6 +248,7 @@ const styles = StyleSheet.create({
   modalEyebrow:{color:colors.ocean,fontSize:10,fontWeight:"900",letterSpacing:1.5},modalTitle:{color:colors.navy,fontSize:24,fontWeight:"900"},
   modalChoices:{gap:8,paddingVertical:4},modalChoice:{minHeight:88,flexDirection:"row",alignItems:"center",gap:12,padding:9,borderRadius:15,borderWidth:2,borderColor:colors.line,backgroundColor:colors.foam,overflow:"hidden"},
   modalChoiceBody:{flex:1},modalChoiceName:{color:colors.navy,fontSize:15,fontWeight:"900"},modalDefaultIcon:{width:65,height:65,textAlign:"center",textAlignVertical:"center",borderRadius:14,color:colors.ocean,fontSize:15,fontWeight:"900",backgroundColor:colors.white},
+  itemEffect:{color:colors.muted,fontSize:9,fontWeight:"700",marginTop:3},effectChange:{marginTop:5,padding:7,borderRadius:9,backgroundColor:colors.white,borderWidth:1,borderColor:colors.line},effectChangeLabel:{color:colors.muted,fontSize:8,fontWeight:"800"},effectValues:{color:colors.navy,fontSize:11,fontWeight:"900",marginTop:2},effectDelta:{fontSize:9,fontWeight:"900",marginTop:2},effectUp:{color:"#169447"},effectDown:{color:"#D94242"},effectSame:{color:colors.muted},
   stats: { flexDirection: "row", gap: 7, marginTop: 12 },
   stat: { flex: 1, minHeight: 75, alignItems: "center", justifyContent: "center", padding: 7, borderRadius: 13, backgroundColor: colors.foam },
   statLabel: { color: colors.muted, fontSize: 10, textAlign: "center" },
