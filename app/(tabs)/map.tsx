@@ -16,9 +16,16 @@ const worldMap = require("../../assets/game/world-chapter-map.png");
 const spaceMap = require("../../assets/game/space-chapter-map.png");
 const AREAS_PER_SECTION = 4;
 const PAGE_NODES = [
-  // 背景画像に描かれている丸いステージ台座の中心座標（下から上へ進行）。
   {x:20,y:.763},{x:19,y:.590},{x:65,y:.503},{x:76,y:.419},
 ];
+const JAPAN_PREFECTURE_POSITIONS: Record<string,{x:number;y:number}> = {
+  hokkaido:{x:76,y:.14},aomori:{x:72,y:.255},iwate:{x:77,y:.29},miyagi:{x:78,y:.325},akita:{x:68,y:.29},yamagata:{x:69,y:.33},fukushima:{x:72,y:.36},
+  ibaraki:{x:79,y:.40},tochigi:{x:74,y:.38},gunma:{x:69,y:.385},saitama:{x:73,y:.405},chiba:{x:80,y:.435},tokyo:{x:74,y:.425},kanagawa:{x:72,y:.45},
+  niigata:{x:65,y:.35},toyama:{x:59,y:.405},ishikawa:{x:55,y:.40},fukui:{x:52,y:.44},yamanashi:{x:67,y:.435},nagano:{x:63,y:.40},gifu:{x:59,y:.445},shizuoka:{x:66,y:.475},aichi:{x:60,y:.48},
+  mie:{x:57,y:.505},shiga:{x:53,y:.47},kyoto:{x:49,y:.47},osaka:{x:49,y:.505},hyogo:{x:44,y:.49},nara:{x:53,y:.505},wakayama:{x:51,y:.535},
+  tottori:{x:39,y:.48},shimane:{x:34,y:.50},okayama:{x:40,y:.52},hiroshima:{x:34,y:.54},yamaguchi:{x:28,y:.56},tokushima:{x:43,y:.57},kagawa:{x:42,y:.54},ehime:{x:37,y:.57},kochi:{x:39,y:.605},
+  fukuoka:{x:24,y:.59},saga:{x:20,y:.615},nagasaki:{x:15,y:.635},kumamoto:{x:22,y:.655},oita:{x:28,y:.62},miyazaki:{x:27,y:.685},kagoshima:{x:22,y:.725},okinawa:{x:39,y:.885},
+};
 
 export default function JapanAreaScreen() {
   const router = useRouter();
@@ -98,9 +105,14 @@ export default function JapanAreaScreen() {
   const pageStart = areaPage * AREAS_PER_SECTION;
   const visibleStates = states.slice(pageStart,pageStart + AREAS_PER_SECTION);
   const nodePoint = useCallback((index: number) => {
+    if (story === "japan") {
+      const slug = states[index]?.area.id.replace(/^jp_/,"");
+      const position = JAPAN_PREFECTURE_POSITIONS[slug];
+      if (position) return { left:position.x / 100 * width, top:position.y * mapHeight };
+    }
     const local = index % AREAS_PER_SECTION;
     return { left:PAGE_NODES[local].x / 100 * width, top:PAGE_NODES[local].y * mapHeight };
-  }, [mapHeight, width]);
+  }, [mapHeight, states, story, width]);
 
   useEffect(() => {
     const timer = setTimeout(() => scrollRef.current?.scrollTo({ y:0, animated:false }), 80);
@@ -151,8 +163,8 @@ export default function JapanAreaScreen() {
         <ImageBackground source={chapterMap} resizeMode="contain" style={[styles.map,{height:mapHeight}]}>
           <View style={styles.sectionShade} />
           {visibleStates.slice(0, -1).map((state, localIndex) => {
-            const first = nodePoint(localIndex);
-            const second = nodePoint(localIndex + 1);
+            const first = nodePoint(pageStart + localIndex);
+            const second = nodePoint(pageStart + localIndex + 1);
             const x1 = first.left;
             const x2 = second.left;
             const y1 = first.top + 26;
@@ -164,13 +176,14 @@ export default function JapanAreaScreen() {
           })}
           {visibleStates.map((state, localIndex) => {
             const index = pageStart + localIndex;
-            const point = nodePoint(localIndex);
+            const point = nodePoint(index);
+            const labelShift = story === "japan" ? (point.left < width*.32 ? 48 : point.left > width*.68 ? -48 : localIndex % 2 ? 42 : -42) : 0;
             return (
               <Pressable key={state.area.id} onPress={() => void chooseArea(state)} style={[styles.node, { left:point.left, top:point.top }]}>
                 <Animated.View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.canUnlock && styles.nodeCanUnlock, state.bossCaught && styles.nodeBoss, state.completed && styles.nodeComplete, state.canUnlock && { transform:[{ scale:readyPulse.interpolate({ inputRange:[0,1], outputRange:[1,1.13] }) }] }]}>
                   <Text style={styles.nodeMark}>{state.canUnlock ? "🔓" : !state.unlocked ? "?" : state.completed ? "★" : state.bossCaught ? "👑" : index + 1}</Text>
                 </Animated.View>
-                <View style={[styles.nodeLabel, state.canUnlock && styles.canUnlockLabel, state.completed && styles.completeLabel]}>
+                <View style={[styles.nodeLabel, {transform:[{translateX:labelShift}]}, state.canUnlock && styles.canUnlockLabel, state.completed && styles.completeLabel]}>
                   <Text numberOfLines={1} style={[styles.nodeName, state.canUnlock && styles.canUnlockName]}>{state.unlocked ? state.area.name : state.canUnlock ? "解放可能" : "？？？"}</Text>
                   <Text style={[styles.nodeStatus, state.canUnlock && styles.canUnlockStatus]}>{state.unlocked ? `${state.discovered}/10` : state.canUnlock ? "タップして解放" : `${state.area.requiredSteps.toLocaleString()}歩`}</Text>
                   <View style={styles.nodeMarks}><Text style={[styles.nodeMiniMark, state.bossCaught && styles.nodeBossMark]}>♛</Text><Text style={[styles.nodeMiniMark, state.completed && styles.nodeCompleteMark]}>★</Text></View>
@@ -289,7 +302,7 @@ export default function JapanAreaScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:0},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},pageNav:{position:"absolute",left:14,right:14,bottom:14,height:54,flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},pageButton:{minWidth:84,height:43,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(5,65,81,.92)",borderWidth:2,borderColor:"rgba(255,255,255,.85)"},pageButtonDisabled:{opacity:.35},pageButtonText:{color:colors.white,fontSize:12,fontWeight:"900"},pageCount:{minWidth:92,alignItems:"center",paddingVertical:5,paddingHorizontal:10,borderRadius:12,backgroundColor:"rgba(255,255,255,.92)"},pageCountText:{color:colors.navy,fontSize:13,fontWeight:"900"},pageRangeText:{color:colors.muted,fontSize:8,fontWeight:"900"},
+  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:145},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},pageNav:{position:"absolute",left:14,right:14,bottom:14,height:54,flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},pageButton:{minWidth:84,height:43,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(5,65,81,.92)",borderWidth:2,borderColor:"rgba(255,255,255,.85)"},pageButtonDisabled:{opacity:.35},pageButtonText:{color:colors.white,fontSize:12,fontWeight:"900"},pageCount:{minWidth:92,alignItems:"center",paddingVertical:5,paddingHorizontal:10,borderRadius:12,backgroundColor:"rgba(255,255,255,.92)"},pageCountText:{color:colors.navy,fontSize:13,fontWeight:"900"},pageRangeText:{color:colors.muted,fontSize:8,fontWeight:"900"},
   header:{position:"absolute",top:10,left:12,right:12,borderRadius:18,padding:12,backgroundColor:"rgba(255,255,255,.95)",elevation:12},title:{color:colors.navy,fontSize:22,fontWeight:"900"},sub:{color:colors.muted,fontSize:10,fontWeight:"700",marginTop:2},progress:{height:6,borderRadius:9,backgroundColor:colors.line,overflow:"hidden",marginTop:8},progressFill:{height:"100%",backgroundColor:colors.coral},
   chapterTabs:{flexDirection:"row",gap:5,marginBottom:7},chapterTab:{flex:1,paddingVertical:6,borderRadius:10,alignItems:"center",backgroundColor:colors.foam},activeChapterTab:{backgroundColor:colors.ocean},lockedChapterTab:{opacity:.55},chapterTabText:{color:colors.navy,fontSize:10,fontWeight:"900"},activeChapterTabText:{color:colors.white},
   route:{position:"absolute",height:6,borderRadius:5,backgroundColor:"rgba(255,255,255,.45)",zIndex:1},routeUnlocked:{backgroundColor:"#FFD55A"},
