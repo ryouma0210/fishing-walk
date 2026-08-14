@@ -40,6 +40,8 @@ export default function JapanAreaScreen() {
   const [currentAreaId, setCurrentAreaId] = useState(FISHING_AREAS[0].id);
   const [story, setStory] = useState<ChapterId>("japan");
   const [areaPage, setAreaPage] = useState(0);
+  const [mapZoomed, setMapZoomed] = useState(false);
+  const [focusAreaId, setFocusAreaId] = useState(FISHING_AREAS[0].id);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [showUnlockConfirm, setShowUnlockConfirm] = useState(false);
   const [unlockCelebration, setUnlockCelebration] = useState<FishingArea | null>(null);
@@ -66,6 +68,7 @@ export default function JapanAreaScreen() {
       const stage = [1, 2, 3, 4].find((level) => ["hat", "top", "bottom", "shoes"].every((kind) => inventory.some((row) => row.item_id === `${kind}${level}` && row.equipped === 1)));
       setOutfitStage(stage ?? 0);
       setCurrentAreaId(currentArea.id);
+      setFocusAreaId(currentArea.id);
       setStory(currentArea.story);
       const storyAreas = FISHING_AREAS.filter((area) => area.story === currentArea.story);
       setAreaPage(Math.floor(Math.max(0,storyAreas.findIndex((area) => area.id === currentArea.id)) / AREAS_PER_SECTION));
@@ -104,15 +107,32 @@ export default function JapanAreaScreen() {
   const chapterMap = story === "japan" ? japanMap : story === "world" ? worldMap : spaceMap;
   const pageStart = areaPage * AREAS_PER_SECTION;
   const visibleStates = states.slice(pageStart,pageStart + AREAS_PER_SECTION);
-  const nodePoint = useCallback((index: number) => {
+  const areaPosition = useCallback((index: number) => {
     if (story === "japan") {
       const slug = states[index]?.area.id.replace(/^jp_/,"");
       const position = JAPAN_PREFECTURE_POSITIONS[slug];
-      if (position) return { left:position.x / 100 * width, top:position.y * mapHeight };
+      if (position) return { x:position.x / 100, y:position.y };
     }
     const local = index % AREAS_PER_SECTION;
-    return { left:PAGE_NODES[local].x / 100 * width, top:PAGE_NODES[local].y * mapHeight };
-  }, [mapHeight, states, story, width]);
+    return { x:PAGE_NODES[local].x / 100, y:PAGE_NODES[local].y };
+  }, [states, story]);
+  const zoomScale = mapZoomed ? 1.9 : 1;
+  const displayWidth = width * zoomScale;
+  const displayHeight = mapHeight * zoomScale;
+  const focusIndex = Math.max(pageStart,states.findIndex((state) => state.area.id === focusAreaId));
+  const focusPosition = areaPosition(focusIndex);
+  const mapLeft = mapZoomed ? width / 2 - focusPosition.x * displayWidth : 0;
+  const mapTop = mapZoomed ? mapHeight / 2 - focusPosition.y * displayHeight : 0;
+  const nodePoint = useCallback((index: number) => {
+    const position = areaPosition(index);
+    return { left:position.x * displayWidth, top:position.y * displayHeight };
+  }, [areaPosition, displayHeight, displayWidth]);
+  const zoomToCurrentArea = () => {
+    const index = states.findIndex((state) => state.area.id === currentAreaId);
+    if (index >= 0) setAreaPage(Math.floor(index / AREAS_PER_SECTION));
+    setFocusAreaId(currentAreaId);
+    setMapZoomed(true);
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => scrollRef.current?.scrollTo({ y:0, animated:false }), 80);
@@ -121,6 +141,8 @@ export default function JapanAreaScreen() {
 
   const chooseArea = async (state: typeof states[number]) => {
     setSelected(state.area);
+    setFocusAreaId(state.area.id);
+    setMapZoomed(true);
     if (!state.unlocked) return;
     await selectArea(state.area);
     setCurrentAreaId(state.area.id);
@@ -160,7 +182,8 @@ export default function JapanAreaScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator>
-        <ImageBackground source={chapterMap} resizeMode="contain" style={[styles.map,{height:mapHeight}]}>
+        <View style={[styles.mapViewport,{height:mapHeight}]}>
+        <ImageBackground source={chapterMap} resizeMode="contain" style={[styles.map,{width:displayWidth,height:displayHeight,left:mapLeft,top:mapTop}]}>
           <View style={styles.sectionShade} />
           {visibleStates.slice(0, -1).map((state, localIndex) => {
             const first = nodePoint(pageStart + localIndex);
@@ -177,34 +200,40 @@ export default function JapanAreaScreen() {
           {visibleStates.map((state, localIndex) => {
             const index = pageStart + localIndex;
             const point = nodePoint(index);
-            const labelShift = story === "japan" ? (point.left < width*.32 ? 48 : point.left > width*.68 ? -48 : localIndex % 2 ? 42 : -42) : 0;
+            const normalizedPoint = areaPosition(index);
+            const labelShift = story === "japan" ? (normalizedPoint.x < .32 ? 48 : normalizedPoint.x > .68 ? -48 : localIndex % 2 ? 42 : -42) : 0;
             return (
               <Pressable key={state.area.id} onPress={() => void chooseArea(state)} style={[styles.node, { left:point.left, top:point.top }]}>
                 <Animated.View style={[styles.nodeCircle, state.unlocked && styles.nodeUnlocked, state.canUnlock && styles.nodeCanUnlock, state.bossCaught && styles.nodeBoss, state.completed && styles.nodeComplete, state.canUnlock && { transform:[{ scale:readyPulse.interpolate({ inputRange:[0,1], outputRange:[1,1.13] }) }] }]}>
                   <Text style={styles.nodeMark}>{state.canUnlock ? "🔓" : !state.unlocked ? "?" : state.completed ? "★" : state.bossCaught ? "👑" : index + 1}</Text>
                 </Animated.View>
-                <View style={[styles.nodeLabel, {transform:[{translateX:labelShift}]}, state.canUnlock && styles.canUnlockLabel, state.completed && styles.completeLabel]}>
+                {(mapZoomed || state.area.id === currentAreaId || state.canUnlock) && <View style={[styles.nodeLabel, {transform:[{translateX:labelShift}]}, state.canUnlock && styles.canUnlockLabel, state.completed && styles.completeLabel]}>
                   <Text numberOfLines={1} style={[styles.nodeName, state.canUnlock && styles.canUnlockName]}>{state.unlocked ? state.area.name : state.canUnlock ? "解放可能" : "？？？"}</Text>
                   <Text style={[styles.nodeStatus, state.canUnlock && styles.canUnlockStatus]}>{state.unlocked ? `${state.discovered}/10` : state.canUnlock ? "タップして解放" : `${state.area.requiredSteps.toLocaleString()}歩`}</Text>
                   <View style={styles.nodeMarks}><Text style={[styles.nodeMiniMark, state.bossCaught && styles.nodeBossMark]}>♛</Text><Text style={[styles.nodeMiniMark, state.completed && styles.nodeCompleteMark]}>★</Text></View>
-                </View>
+                </View>}
                 {state.area.id === currentAreaId && state.unlocked && <View style={styles.avatar}><AnglerArt stage={outfitStage} height={72} /></View>}
               </Pressable>
             );
           })}
-          <View style={styles.pageNav}>
-            <Pressable disabled={areaPage === 0} onPress={() => setAreaPage((page) => Math.max(0,page-1))} style={[styles.pageButton,areaPage === 0 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>‹ 前へ</Text></Pressable>
-            <View style={styles.pageCount}><Text style={styles.pageCountText}>{areaPage+1} / {sectionCount}</Text><Text style={styles.pageRangeText}>AREA {pageStart+1}–{Math.min(states.length,pageStart+AREAS_PER_SECTION)}</Text></View>
-            <Pressable disabled={areaPage >= sectionCount-1} onPress={() => setAreaPage((page) => Math.min(sectionCount-1,page+1))} style={[styles.pageButton,areaPage >= sectionCount-1 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>次へ ›</Text></Pressable>
-          </View>
         </ImageBackground>
+          <View style={styles.zoomControls}>
+            <Pressable onPress={() => setMapZoomed(false)} style={[styles.zoomButton,!mapZoomed && styles.zoomButtonActive]}><Text style={[styles.zoomButtonText,!mapZoomed && styles.zoomButtonTextActive]}>全体表示</Text></Pressable>
+            <Pressable onPress={zoomToCurrentArea} style={[styles.zoomButton,mapZoomed && styles.zoomButtonActive]}><Text style={[styles.zoomButtonText,mapZoomed && styles.zoomButtonTextActive]}>現在地を拡大</Text></Pressable>
+          </View>
+          <View style={styles.pageNav}>
+            <Pressable disabled={areaPage === 0} onPress={() => { setMapZoomed(false); setAreaPage((page) => Math.max(0,page-1)); }} style={[styles.pageButton,areaPage === 0 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>‹ 前へ</Text></Pressable>
+            <View style={styles.pageCount}><Text style={styles.pageCountText}>{areaPage+1} / {sectionCount}</Text><Text style={styles.pageRangeText}>AREA {pageStart+1}–{Math.min(states.length,pageStart+AREAS_PER_SECTION)}</Text></View>
+            <Pressable disabled={areaPage >= sectionCount-1} onPress={() => { setMapZoomed(false); setAreaPage((page) => Math.min(sectionCount-1,page+1)); }} style={[styles.pageButton,areaPage >= sectionCount-1 && styles.pageButtonDisabled]}><Text style={styles.pageButtonText}>次へ ›</Text></Pressable>
+          </View>
+        </View>
       </ScrollView>
 
       <View style={styles.header}>
         <View style={styles.chapterTabs}>
           {(["japan","world","space"] as ChapterId[]).map((id) => {
             const open = id === "japan" || id === "world" ? id === "japan" || japanClear : worldClear;
-            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setAreaPage(0); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
+            return <Pressable key={id} onPress={() => { if (open) { setStory(id); setAreaPage(0); setMapZoomed(false); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
           })}
         </View>
         <Text style={styles.title}>{story === "japan" ? "日本全国 Fishing" : story === "world" ? "世界一周 Fishing" : "銀河宇宙 Fishing"}</Text>
@@ -302,7 +331,7 @@ export default function JapanAreaScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:145},map:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},pageNav:{position:"absolute",left:14,right:14,bottom:14,height:54,flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},pageButton:{minWidth:84,height:43,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(5,65,81,.92)",borderWidth:2,borderColor:"rgba(255,255,255,.85)"},pageButtonDisabled:{opacity:.35},pageButtonText:{color:colors.white,fontSize:12,fontWeight:"900"},pageCount:{minWidth:92,alignItems:"center",paddingVertical:5,paddingHorizontal:10,borderRadius:12,backgroundColor:"rgba(255,255,255,.92)"},pageCountText:{color:colors.navy,fontSize:13,fontWeight:"900"},pageRangeText:{color:colors.muted,fontSize:8,fontWeight:"900"},
+  safe:{flex:1,backgroundColor:"#0E80B8"},scroll:{flex:1},scrollContent:{paddingTop:145},mapViewport:{width:"100%",overflow:"hidden",backgroundColor:"#087EAC"},map:{position:"absolute",overflow:"hidden",backgroundColor:"#087EAC"},sectionShade:{position:"absolute",top:0,right:0,bottom:0,left:0,backgroundColor:"rgba(0,42,62,.08)"},zoomControls:{position:"absolute",top:10,right:10,zIndex:20,flexDirection:"row",gap:6},zoomButton:{paddingHorizontal:10,paddingVertical:8,borderRadius:99,backgroundColor:"rgba(255,255,255,.9)",borderWidth:2,borderColor:colors.white},zoomButtonActive:{backgroundColor:colors.ocean,borderColor:"#9EEBE5"},zoomButtonText:{color:colors.navy,fontSize:9,fontWeight:"900"},zoomButtonTextActive:{color:colors.white},pageNav:{position:"absolute",zIndex:20,left:14,right:14,bottom:14,height:54,flexDirection:"row",alignItems:"center",justifyContent:"space-between",gap:8},pageButton:{minWidth:84,height:43,borderRadius:99,alignItems:"center",justifyContent:"center",backgroundColor:"rgba(5,65,81,.92)",borderWidth:2,borderColor:"rgba(255,255,255,.85)"},pageButtonDisabled:{opacity:.35},pageButtonText:{color:colors.white,fontSize:12,fontWeight:"900"},pageCount:{minWidth:92,alignItems:"center",paddingVertical:5,paddingHorizontal:10,borderRadius:12,backgroundColor:"rgba(255,255,255,.92)"},pageCountText:{color:colors.navy,fontSize:13,fontWeight:"900"},pageRangeText:{color:colors.muted,fontSize:8,fontWeight:"900"},
   header:{position:"absolute",top:10,left:12,right:12,borderRadius:18,padding:12,backgroundColor:"rgba(255,255,255,.95)",elevation:12},title:{color:colors.navy,fontSize:22,fontWeight:"900"},sub:{color:colors.muted,fontSize:10,fontWeight:"700",marginTop:2},progress:{height:6,borderRadius:9,backgroundColor:colors.line,overflow:"hidden",marginTop:8},progressFill:{height:"100%",backgroundColor:colors.coral},
   chapterTabs:{flexDirection:"row",gap:5,marginBottom:7},chapterTab:{flex:1,paddingVertical:6,borderRadius:10,alignItems:"center",backgroundColor:colors.foam},activeChapterTab:{backgroundColor:colors.ocean},lockedChapterTab:{opacity:.55},chapterTabText:{color:colors.navy,fontSize:10,fontWeight:"900"},activeChapterTabText:{color:colors.white},
   route:{position:"absolute",height:6,borderRadius:5,backgroundColor:"rgba(255,255,255,.45)",zIndex:1},routeUnlocked:{backgroundColor:"#FFD55A"},
