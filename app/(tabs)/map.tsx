@@ -14,15 +14,15 @@ import { FISH, HABITAT_NAMES } from "../../src/constants/game";
 const japanMap = require("../../assets/game/japan-prefecture-map.png");
 const worldMap = require("../../assets/game/world-chapter-map.png");
 const spaceMap = require("../../assets/game/space-chapter-map.png");
-const AREAS_PER_SECTION = 8;
+const AREAS_PER_SECTION = 4;
 const PAGE_NODES = [
-  {x:30,y:.84},{x:32,y:.75},{x:43,y:.66},{x:61,y:.57},
-  {x:70,y:.49},{x:58,y:.41},{x:68,y:.33},{x:57,y:.25},
+  // 背景画像に描かれている丸いステージ台座の中心座標（下から上へ進行）。
+  {x:20,y:.763},{x:19,y:.590},{x:65,y:.503},{x:76,y:.419},
 ];
 
 export default function JapanAreaScreen() {
   const router = useRouter();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const [caughtIds, setCaughtIds] = useState<Set<string>>(new Set());
   const [catchSummaries, setCatchSummaries] = useState<Map<string, CatchSummary>>(new Map());
@@ -93,7 +93,7 @@ export default function JapanAreaScreen() {
   const selectedState = selected ? states.find((state) => state.area.id === selected.id) : undefined;
   const currentIndex = Math.max(0, states.reduce((last, state, index) => state.unlocked ? index : last, 0));
   const sectionCount = Math.ceil(states.length / AREAS_PER_SECTION);
-  const mapHeight = Math.max(760,height - 105);
+  const mapHeight = width * 1.5;
   const chapterMap = story === "japan" ? japanMap : story === "world" ? worldMap : spaceMap;
   const pageStart = areaPage * AREAS_PER_SECTION;
   const visibleStates = states.slice(pageStart,pageStart + AREAS_PER_SECTION);
@@ -148,7 +148,7 @@ export default function JapanAreaScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator>
-        <ImageBackground source={chapterMap} resizeMode="cover" style={[styles.map,{height:mapHeight}]}>
+        <ImageBackground source={chapterMap} resizeMode="contain" style={[styles.map,{height:mapHeight}]}>
           <View style={styles.sectionShade} />
           {visibleStates.slice(0, -1).map((state, localIndex) => {
             const first = nodePoint(localIndex);
