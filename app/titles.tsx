@@ -2,38 +2,35 @@ import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Card, Header, Screen, ui } from "../src/components/ui";
-import { FISH } from "../src/constants/game";
-import { getCatchStats, getCatchSummaries } from "../src/database/db";
-import { syncTodaySteps } from "../src/services/stepService";
+import { getCatchStats, getCatchSummaries, getPlayerProgress, getTotalSteps } from "../src/database/db";
 import { colors } from "../src/constants/theme";
+import { getSelectedTitle, setSelectedTitle } from "../src/services/titleService";
+import { isTitleUnlocked, TITLE_DEFINITIONS, TitleValues } from "../src/constants/titles";
 
 export default function TitlesScreen() {
   const router = useRouter();
-  const [values, setValues] = useState({ steps: 0, count: 0, unique: 0, largest: 0 });
+  const [values, setValues] = useState<TitleValues>({ steps:0,catches:0,unique:0,largest:0,level:1 });
+  const [selectedTitle, setSelectedTitleState] = useState<string | null>(null);
   useFocusEffect(useCallback(() => {
-    Promise.all([syncTodaySteps(), getCatchStats(), getCatchSummaries()]).then(([today, stats, rows]) => {
-      setValues({ steps: today.steps, count: stats.count, unique: rows.length, largest: stats.largest });
+    Promise.all([getTotalSteps(), getCatchStats(), getCatchSummaries(),getPlayerProgress(),getSelectedTitle()]).then(([steps, stats, rows,progress,selected]) => {
+      setValues({ steps,catches:stats.count,unique:rows.length,largest:stats.largest,level:progress.level });
+      setSelectedTitleState(selected);
     });
   }, []));
-  const titles = [
-    { icon: "👣", name: "はじめての一歩", condition: "1日に1,000歩", unlocked: values.steps >= 1000 },
-    { icon: "🥾", name: "ウォーキング名人", condition: "1日に10,000歩", unlocked: values.steps >= 10000 },
-    { icon: "🎣", name: "新人アングラー", condition: "魚を1匹釣る", unlocked: values.count >= 1 },
-    { icon: "🐟", name: "魚博士", condition: "20種類発見", unlocked: values.unique >= 20 },
-    { icon: "🐋", name: "大物ハンター", condition: "100cm以上を捕獲", unlocked: values.largest >= 100 },
-    { icon: "🏆", name: "伝説の釣り人", condition: "80種類すべて発見", unlocked: values.unique === FISH.length },
-  ];
+  const titles=TITLE_DEFINITIONS.map((title) => ({...title,unlocked:isTitleUnlocked(title,values)}));
   return (
     <Screen>
       <View style={ui.between}><Header title="称号" sub="歩いて、釣って、称号を集めよう" /><Pressable onPress={() => router.back()} style={styles.back}><Text style={styles.backText}>戻る</Text></Pressable></View>
       {titles.map((title) => (
-        <Card key={title.name} style={title.unlocked ? styles.unlocked : styles.locked}>
+        <Pressable key={title.name} disabled={!title.unlocked} onPress={async () => { await setSelectedTitle(title.name); setSelectedTitleState(title.name); }}>
+        <Card style={selectedTitle === title.name ? styles.selected : title.unlocked ? styles.unlocked : styles.locked}>
           <View style={styles.row}>
             <Text style={styles.icon}>{title.unlocked ? title.icon : "🔒"}</Text>
             <View style={styles.body}><Text style={styles.name}>{title.name}</Text><Text style={styles.condition}>{title.condition}</Text></View>
-            <Text style={title.unlocked ? styles.statusUnlocked : styles.statusLocked}>{title.unlocked ? "獲得済み" : "未獲得"}</Text>
+            <Text style={title.unlocked ? styles.statusUnlocked : styles.statusLocked}>{!title.unlocked ? "未獲得" : selectedTitle === title.name ? "選択中" : "変更する"}</Text>
           </View>
         </Card>
+        </Pressable>
       ))}
     </Screen>
   );
@@ -50,5 +47,6 @@ const styles = StyleSheet.create({
   statusUnlocked: { color: colors.ocean, fontSize: 11, fontWeight: "900" },
   statusLocked: { color: colors.muted, fontSize: 11, fontWeight: "800" },
   unlocked: { borderColor: colors.gold, backgroundColor: "#FFFBEE" },
+  selected:{borderWidth:3,borderColor:colors.coral,backgroundColor:"#FFF3ED"},
   locked: { opacity: 0.58 },
 });
