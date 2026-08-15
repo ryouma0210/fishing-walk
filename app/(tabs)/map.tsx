@@ -127,7 +127,7 @@ export default function JapanAreaScreen() {
     if (story === "space") return SPACE_PAGE_NODES[local];
     return { x:PAGE_NODES[local].x / 100, y:PAGE_NODES[local].y };
   }, [states, story]);
-  const zoomScale = mapZoomed ? 1.9 : 1;
+  const zoomScale = mapZoomed ? 3.2 : 1;
   const displayWidth = width * zoomScale;
   const displayHeight = mapHeight * zoomScale;
   const focusIndex = Math.max(pageStart,states.findIndex((state) => state.area.id === focusAreaId));
