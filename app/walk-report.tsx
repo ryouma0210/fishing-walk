@@ -6,7 +6,7 @@ import { colors } from "../src/constants/theme";
 import { getStepsForMonth, getWalkPoints } from "../src/database/db";
 import { requestHealthAccess, syncHealthMonth } from "../src/services/healthService";
 
-export default function WalkScreen() {
+export function WalkScreen({ showBack = true }: { showBack?: boolean }) {
   const router = useRouter();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -87,7 +87,7 @@ export default function WalkScreen() {
     <Screen>
       <View style={ui.between}>
         <Header title="Walk Report" sub={status} />
-        <Pressable onPress={() => router.back()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></Pressable>
+        {showBack && <Pressable onPress={() => router.back()} style={styles.backButton}><Text style={styles.backButtonText}>戻る</Text></Pressable>}
       </View>
       <Card>
         <View style={ui.between}>
@@ -185,6 +185,10 @@ export default function WalkScreen() {
       </Card>
     </Screen>
   );
+}
+
+export default function WalkReportRoute() {
+  return <WalkScreen />;
 }
 
 const styles = StyleSheet.create({

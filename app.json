@@ -13,6 +13,13 @@
       "expo-font",
       "expo-health-connect",
       [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyAh45IOKK2nyqx-_dSAGVBcmq0vSsWe4E0",
+          "iosGoogleMapsApiKey": "AIzaSyAh45IOKK2nyqx-_dSAGVBcmq0vSsWe4E0"
+        }
+      ],
+      [
         "@kingstinct/react-native-healthkit",
         {
           "NSHealthShareUsageDescription": "今日と月間の歩数を表示し、釣りゲームの歩数ポイントへ反映するために使用します。",

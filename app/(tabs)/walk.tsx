@@ -88,28 +88,6 @@ export default function MyPage() {
   return (
     <Screen>
       <Header title="My Page" sub="歩数・釣果・称号・設定" />
-      <Card style={styles.statusCard}>
-        <Text style={styles.statusHeading}>PLAYER STATUS</Text>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>称号：</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusValue, styles.statusTitle]}>{currentTitle}</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
-        <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
-        <View style={styles.expBlock}>
-          <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
-          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
-        </View>
-        <View style={styles.statusBlank} />
-        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日の歩数：</Text><Text style={styles.todayStatusValue}>{steps.toLocaleString()}歩</Text></View>
-        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日獲得pt：</Text><Text style={styles.todayStatusValue}>{todayEarnedPoints.toLocaleString()}pt</Text></View>
-        <View style={styles.statusBlank} />
-        <Text style={styles.performanceHeading}>FISHING PERFORMANCE</Text>
-        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り(%)</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.windingPercent.toFixed(1)}%</Text></View>
-        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り性能</Text><Text style={styles.performanceValue}>{currentEquipmentStats.windingPerformance.toFixed(1)}</Text></View>
-        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>魚の抵抗軽減</Text><Text style={styles.performanceValue}>{currentEquipmentStats.resistance.toFixed(1)}%</Text></View>
-        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>サイズ補正</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.size.toFixed(0)}%</Text></View>
-        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>1日の釣獲上限</Text><Text style={styles.performanceValue}>{currentEquipmentStats.capacity.toLocaleString()}匹</Text></View>
-      </Card>
-
       <Card style={styles.profile}>
         <View style={styles.equipmentBoard}>
           <View style={styles.slotColumn}>
@@ -129,6 +107,29 @@ export default function MyPage() {
         </View>
       </Card>
 
+      <Card style={styles.statusCard}>
+        <Text style={styles.statusHeading}>PLAYER STATUS</Text>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>プレイヤーレベル：</Text><Text style={styles.statusValue}>Lv.{playerProgress.level}</Text></View>
+        <View style={styles.expBlock}>
+          <Text style={styles.expLabel}>{playerProgress.level >= 100 ? "MAX LEVEL" : `次のレベルまで ${Math.max(0, playerProgress.nextLevelExp-playerProgress.currentLevelExp).toLocaleString()} EXP`}</Text>
+          <View style={styles.expTrack}><View style={[styles.expFill,{width:`${playerProgress.level >= 100 ? 100 : Math.min(100,playerProgress.currentLevelExp/Math.max(1,playerProgress.nextLevelExp)*100)}%`}]} /></View>
+        </View>
+        <View style={styles.statusBlank} />
+        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日の歩数：</Text><Text style={styles.todayStatusValue}>{steps.toLocaleString()}歩</Text></View>
+        <View style={[styles.statusRow, styles.todayStatusRow]}><Text style={styles.todayStatusLabel}>本日獲得pt：</Text><Text style={styles.todayStatusValue}>{todayEarnedPoints.toLocaleString()}pt</Text></View>
+        <View style={styles.statusBlank} />
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>称号：</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusValue, styles.statusTitle]}>{currentTitle}</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>所持pt：</Text><Text style={styles.statusValue}>{points.toLocaleString()}pt</Text></View>
+        <View style={styles.statusRow}><Text style={styles.statusLabel}>累計歩数：</Text><Text style={styles.statusValue}>{totalSteps.toLocaleString()}歩</Text></View>
+        <View style={styles.statusBlank} />
+        <Text style={styles.performanceHeading}>FISHING PERFORMANCE</Text>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り(%)</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.windingPercent.toFixed(1)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>総巻き取り性能</Text><Text style={styles.performanceValue}>{currentEquipmentStats.windingPerformance.toFixed(1)}</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>魚の抵抗軽減</Text><Text style={styles.performanceValue}>{currentEquipmentStats.resistance.toFixed(1)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>サイズ補正</Text><Text style={styles.performanceValue}>+{currentEquipmentStats.size.toFixed(0)}%</Text></View>
+        <View style={styles.performanceRow}><Text style={styles.performanceLabel}>1日の釣獲上限</Text><Text style={styles.performanceValue}>{currentEquipmentStats.capacity.toLocaleString()}匹</Text></View>
+      </Card>
+
       <Card>
         <Text style={ui.h2}>釣り記録</Text>
         <View style={styles.stats}>
@@ -139,11 +140,6 @@ export default function MyPage() {
       </Card>
 
       <View style={styles.menu}>
-        <Pressable onPress={() => router.push("/walk-report")} style={styles.menuItem}>
-          <View style={styles.menuIcon}><Text style={styles.menuEmoji}>👣</Text></View>
-          <View style={styles.menuBody}><Text style={styles.menuTitle}>歩数</Text><Text style={styles.menuSub}>グラフ・カレンダー・再同期</Text></View>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
         <Pressable onPress={() => router.push("/daily")} style={[styles.menuItem, daily.claimable > 0 && styles.dailyReady]}>
           <View style={styles.menuIcon}><Text style={styles.menuEmoji}>🎁</Text></View>
           <View style={styles.menuBody}><Text style={styles.menuTitle}>デイリー</Text><Text style={styles.menuSub}>{daily.claimable > 0 ? `${daily.claimable}個の報酬を受け取れます` : `${daily.completed}/${daily.total} 報酬受取済み`}</Text></View>
