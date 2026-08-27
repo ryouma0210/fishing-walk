@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, Modal, PanResponder, Platform, Pressable, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -15,6 +15,8 @@ import { AREA_COORDINATES } from "../../src/constants/areaCoordinates";
 
 const AREAS_PER_SECTION = 4;
 const IS_EXPO_GO = Constants.appOwnership === "expo";
+// Expo Goではネイティブマップを読み込めないため、開発ビルドのときだけ動的に取得する。
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const NativeMaps = IS_EXPO_GO ? null : require("react-native-maps");
 const NativeMapView = NativeMaps?.default;
 const NativeMarker = NativeMaps?.Marker;
@@ -75,8 +77,7 @@ export default function JapanAreaScreen() {
   const [mapZoomed, setMapZoomed] = useState(true);
   const [focusAreaId, setFocusAreaId] = useState(FISHING_AREAS[0].id);
   const [mapPan, setMapPan] = useState({x:0,y:0});
-  const mapPanValue = useRef({x:0,y:0});
-  const mapPanStart = useRef({x:0,y:0});
+  const [mapDragStart, setMapDragStart] = useState<{pageX:number;pageY:number;panX:number;panY:number} | null>(null);
   const [selectedFishId, setSelectedFishId] = useState<string | null>(null);
   const [showUnlockConfirm, setShowUnlockConfirm] = useState(false);
   const [showAreaSearch, setShowAreaSearch] = useState(false);
@@ -86,29 +87,6 @@ export default function JapanAreaScreen() {
   const [unlockBurst] = useState(() => new Animated.Value(0));
   const [unlockSpin] = useState(() => new Animated.Value(0));
   const [readyPulse] = useState(() => new Animated.Value(0));
-  const mapPanResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder:() => false,
-    onMoveShouldSetPanResponder:(_, gesture) => IS_EXPO_GO && story !== "space" && (Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5),
-    onPanResponderGrant:() => { mapPanStart.current = mapPanValue.current; },
-    onPanResponderMove:(_, gesture) => {
-      const next = {x:mapPanStart.current.x + gesture.dx,y:mapPanStart.current.y + gesture.dy};
-      mapPanValue.current = next;
-      setMapPan(next);
-    },
-    onPanResponderRelease:(_, gesture) => {
-      const next = {x:mapPanStart.current.x + gesture.dx,y:mapPanStart.current.y + gesture.dy};
-      mapPanValue.current = next;
-      mapPanStart.current = next;
-      setMapPan(next);
-    },
-    onPanResponderTerminate:(_, gesture) => {
-      const next = {x:mapPanStart.current.x + gesture.dx,y:mapPanStart.current.y + gesture.dy};
-      mapPanValue.current = next;
-      mapPanStart.current = next;
-      setMapPan(next);
-    },
-  }), [story]);
-
   useEffect(() => {
     const pulse = Animated.loop(Animated.sequence([
       Animated.timing(readyPulse, { toValue:1, duration:700, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
@@ -134,7 +112,7 @@ export default function JapanAreaScreen() {
       setSelectedFishId(null);
       setShowUnlockConfirm(false);
     });
-  }, []));
+  }, [setSelectedFishId, setShowUnlockConfirm]));
 
   const japanClear = caughtIds.has("jp_okinawa_sss");
   const worldLast = FISHING_AREAS.filter((area) => area.story === "world").at(-1);
@@ -225,18 +203,10 @@ export default function JapanAreaScreen() {
     const position = areaPosition(index);
     return { left:position.x * displayWidth, top:position.y * displayHeight };
   }, [areaPosition, displayHeight, displayWidth]);
-  const zoomToCurrentArea = () => {
-    mapPanValue.current = {x:0,y:0};
-    setMapPan({x:0,y:0});
-    setFocusAreaId(currentAreaId);
-    setMapZoomed(true);
-  };
-
   const moveArea = async (direction: -1 | 1) => {
     const nextIndex = focusedStateIndex + direction;
     const nextState = states[nextIndex];
     if (!nextState) return;
-    mapPanValue.current = {x:0,y:0};
     setMapPan({x:0,y:0});
     setFocusAreaId(nextState.area.id);
     setMapZoomed(true);
@@ -250,7 +220,6 @@ export default function JapanAreaScreen() {
   const jumpToArea = async (areaId: string) => {
     const targetState = states.find((state) => state.area.id === areaId);
     if (!targetState) return;
-    mapPanValue.current = {x:0,y:0};
     setMapPan({x:0,y:0});
     setFocusAreaId(targetState.area.id);
     setMapZoomed(true);
@@ -329,7 +298,18 @@ export default function JapanAreaScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.scrollContent}>
         <View style={styles.mapViewport} onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}>
-          {story !== "space" && IS_EXPO_GO ? <View style={StyleSheet.absoluteFill} {...mapPanResponder.panHandlers}>
+          {story !== "space" && IS_EXPO_GO ? <View
+            style={StyleSheet.absoluteFill}
+            onStartShouldSetResponder={() => false}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={(event) => setMapDragStart({pageX:event.nativeEvent.pageX,pageY:event.nativeEvent.pageY,panX:mapPan.x,panY:mapPan.y})}
+            onResponderMove={(event) => {
+              if (!mapDragStart) return;
+              setMapPan({x:mapDragStart.panX+event.nativeEvent.pageX-mapDragStart.pageX,y:mapDragStart.panY+event.nativeEvent.pageY-mapDragStart.pageY});
+            }}
+            onResponderRelease={() => setMapDragStart(null)}
+            onResponderTerminate={() => setMapDragStart(null)}
+          >
             <View style={styles.expoTileMap}>
               {expoTileMap?.tiles.map((tile) => <Image key={tile.key} source={{ uri:tile.uri }} resizeMode="cover" style={[styles.expoTile,{left:tile.left,top:tile.top}]} />)}
               {states.slice(0, -1).map((state, index) => {
@@ -442,7 +422,7 @@ export default function JapanAreaScreen() {
         <View style={styles.chapterTabs}>
           {(["japan","world","space"] as ChapterId[]).map((id) => {
             const open = id === "japan" || id === "world" ? id === "japan" || japanClear : worldClear;
-            return <Pressable key={id} onPress={() => { if (open) { const first=FISHING_AREAS.find((area) => area.story === id); mapPanValue.current={x:0,y:0}; setMapPan({x:0,y:0}); setStory(id); if (first) setFocusAreaId(first.id); setMapZoomed(true); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
+            return <Pressable key={id} onPress={() => { if (open) { const first=FISHING_AREAS.find((area) => area.story === id); setMapPan({x:0,y:0}); setStory(id); if (first) setFocusAreaId(first.id); setMapZoomed(true); setSelected(null); } }} style={[styles.chapterTab, story === id && styles.activeChapterTab, !open && styles.lockedChapterTab]}><Text style={[styles.chapterTabText, story === id && styles.activeChapterTabText]}>{id === "japan" ? "日本編" : id === "world" ? "世界編" : "宇宙編"}{!open ? " 🔒" : ""}</Text></Pressable>;
           })}
         </View>
         <Text style={styles.title}>{story === "japan" ? "日本全国 Fishing" : story === "world" ? "世界一周 Fishing" : "銀河宇宙 Fishing"}</Text>
