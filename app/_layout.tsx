@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { db } from "../src/database/db";
 import { colors } from "../src/constants/theme";
 import { syncTodaySteps } from "../src/services/stepService";
@@ -27,7 +28,7 @@ export default function RootLayout() {
 
   const earnedPoints = Math.floor((todaySteps ?? 0) / 100);
 
-  return <>
+  return <SafeAreaProvider>
     <StatusBar style="dark" />
     <BackgroundMusic />
     <Stack screenOptions={{ headerShown: false }} />
@@ -58,13 +59,13 @@ export default function RootLayout() {
           </View>
 
           <Text style={styles.pointRule}>100歩 ＝ 1ポイント</Text>
-          <Pressable disabled={todaySteps === null} onPress={() => setShowGreeting(false)} style={({ pressed }) => [styles.closeButton, (pressed || todaySteps === null) && styles.closeButtonDim]}>
+          <Pressable onPress={() => setShowGreeting(false)} style={({ pressed }) => [styles.closeButton, pressed && styles.closeButtonDim]}>
             <Text style={styles.closeButtonText}>今日も釣りに行く</Text>
           </Pressable>
         </View>
       </View>
     </Modal>
-  </>;
+  </SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({
